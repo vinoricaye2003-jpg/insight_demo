@@ -1,6 +1,6 @@
 """
 XHS-MarketAI System: 自进化数据挖掘机
-集成 DeepSeek API 的市场洞察分析系统
+集成 Qwen API 的市场洞察分析系统
 """
 
 import pandas as pd
@@ -12,23 +12,27 @@ from difflib import SequenceMatcher
 from openai import OpenAI
 import numpy as np
 from collections import Counter
+from dotenv import load_dotenv
+
+# 加载 .env 文件中的环境变量
+load_dotenv()
 
 
 class MarketInsightSystem:
     """通用市场洞察系统 - 支持任意数据集和用户提示"""
     
-    def __init__(self, api_key: str = None, model: str = "deepseek-chat"):
+    def __init__(self, api_key: str = None, model: str = "qwen-plus"):
         """
         初始化系统
         Args:
-            api_key: DeepSeek API 密钥
-            model: 使用的模型名称
+            api_key: Qwen API 密钥（阿里云DashScope）
+            model: 使用的模型名称（可选：qwen-turbo, qwen-plus, qwen-max）
         """
-        self.api_key = api_key or os.getenv("DEEPSEEK_API_KEY")
+        self.api_key = api_key or os.getenv("DASHSCOPE_API_KEY")
         self.model = model
         self.client = OpenAI(
             api_key=self.api_key,
-            base_url="https://api.deepseek.com"
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
         )
         
         # 系统状态 (Context Buffer)
@@ -76,15 +80,20 @@ class MarketInsightSystem:
     def _get_embedding(self, text: str) -> np.ndarray:
         """
         获取文本的向量表示 (Embedding)
-        注意：当前使用DeepSeek API，不支持Embedding
-        已改用纯文本相似度作为替代方案
         Args:
             text: 输入文本
         Returns:
-            None (已弃用向量方案)
+            向量数组
         """
-        # DeepSeek不支持Embedding API，使用文本相似度代替
-        return None
+        try:
+            response = self.client.embeddings.create(
+                model="text-embedding-3-small",
+                input=text
+            )
+            return np.array(response.data[0].embedding)
+        except Exception as e:
+            print(f"⚠️ Embedding 获取失败: {e}，使用文本相似度作为备选")
+            return None
     
     def _cosine_similarity(self, vec1: np.ndarray, vec2: np.ndarray) -> float:
         """
@@ -122,7 +131,7 @@ class MarketInsightSystem:
     
     def _call_llm(self, system_prompt: str, user_prompt: str, temperature: float = 0.7) -> str:
         """
-        调用 DeepSeek API
+        调用 Qwen API
         Args:
             system_prompt: 系统提示词
             user_prompt: 用户提示词
@@ -208,30 +217,15 @@ class MarketInsightSystem:
 - **禁止编造数据**：如果数据中没有某个关键词，绝对不能虚构其搜索指数
 """
         
-        # 构建用户消息，包含历史洞察和错误反馈
-        # 格式化历史洞察为完整信息
-        history_context = self._format_history_for_context()
-        
-        user_message_parts = [f"""
-【战略背景】
-产品：松达松子粉（婴儿爽身粉）
-竞品：贝亲桃子水
-目标：从竞品手中抢夺市场份额，在淡季布局，为明年夏季旺季做准备
-
-【前轮关键发现】（你必须基于这些发现进行纵向深挖，不要横向展开新话题）
-{history_context}
-
-【本轮挖掘方向】
+        # 构建用户消息，包含错误反馈
+        user_message_parts = [f"""用户需求：
 {user_prompt}
 
-【可用数据概览】
+可用数据概览：
 {data_summary}
 
-【核心要求】
-1. 你必须在前轮发现的基础上，进行递进式深挖
-2. 如果前轮发现了"婴儿水蓝海词"，本轮要深挖"婴儿水用户的其他需求"
-3. 如果前轮分析了"用户需求"，本轮要设计"如何截流这些用户"的战术
-4. 每轮深度+1，形成"发现→分析→战术→执行"的递进链条
+历史洞察（避免重复）：
+{json.dumps(self.insight_history[-3:], ensure_ascii=False, indent=2) if self.insight_history else "无"}
 """]
         
         # 如果有错误反馈，加入纠错指令
@@ -283,37 +277,6 @@ class MarketInsightSystem:
                 "next_prompt": user_prompt,
                 "raw_response": response
             }
-    
-    def _format_history_for_context(self) -> str:
-        """
-        格式化历史洞察为完整的上下文信息
-        Returns:
-            格式化的历史信息字符串
-        """
-        if not self.insight_history:
-            return "这是第一轮分析，暂无历史洞察"
-        
-        formatted_parts = []
-        for i, item in enumerate(self.insight_history, 1):
-            if isinstance(item, dict):
-                insight_text = item.get('insight', '无洞察')
-                audit_passed = item.get('audit_passed', True)
-            else:
-                insight_text = str(item)
-                audit_passed = True
-            
-            # 提取关键数字和关键词
-            numbers = re.findall(r'\d+', insight_text)
-            key_numbers = numbers[:5] if numbers else []
-            
-            formatted_parts.append(f"""
-第 {i} 轮洞察：
-{insight_text[:300]}{"..." if len(insight_text) > 300 else ""}
-核心数据：{", ".join(key_numbers)}
-审计状态：{'✅ 通过' if audit_passed else '❌ 未通过'}
-""")
-        
-        return "\n".join(formatted_parts)
     
     def _build_data_summary(self, data_dict: Dict[str, pd.DataFrame]) -> str:
         """构建数据概览字符串 - 提供足够详细的数据让LLM能真正分析"""
@@ -379,10 +342,10 @@ class MarketInsightSystem:
             evidence: Analyst 提交的证据列表
             data_dict: 原始数据字典
         Returns:
-            (is_passed, log_message)
+            (is_passed, log_message, error_feedback)
         """
         if not evidence:
-            return False, "❌ 证据列表为空，无法验证"
+            return False, "❌ 证据列表为空，无法验证", "证据列表为空，请提供有效的证据支持"
         
         verification_logs = []
         all_passed = True
@@ -918,10 +881,11 @@ def main():
     print("="*80)
     
     # 初始化系统（需要设置 API Key）
-    api_key = os.getenv("DEEPSEEK_API_KEY")
+    api_key = os.getenv("DASHSCOPE_API_KEY")
     if not api_key:
-        print("\n⚠️  请设置环境变量 DEEPSEEK_API_KEY")
+        print("\n⚠️  请设置环境变量 DASHSCOPE_API_KEY")
         print("或者在代码中直接传入: system = MarketInsightSystem(api_key='your_key')")
+        print("\n获取API Key: https://dashscope.console.aliyun.com/apiKey")
         return
     
     system = MarketInsightSystem(api_key=api_key)
