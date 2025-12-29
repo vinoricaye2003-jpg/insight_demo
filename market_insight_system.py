@@ -38,8 +38,8 @@ class MarketInsightSystem:
         # 系统状态 (Context Buffer)
         self.iteration_count = 0
         self.max_iterations = 5
-        self.insight_history = []  # 文本历史
-        self.insight_embeddings = []  # 洞察向量历史
+        self.insight_history = []  # 所有洞察历史（含审计失败项，用于完整报告和调试）
+        self.insight_embeddings = []  # 向量存储（仅审计通过的洞察）
         self.evidence_pool = []  # 证据池
         self.keywords_pool = set()  # 已发现的关键词池
         self.high_similarity_count = 0  # 连续高相似度计数
@@ -218,14 +218,20 @@ class MarketInsightSystem:
 """
         
         # 构建用户消息，包含错误反馈
+        # 仅传递审计通过的洞察给LLM，避免错误信息污染
+        valid_insights = [
+            h for h in self.insight_history 
+            if h.get('audit_passed', False)
+        ]
+        
         user_message_parts = [f"""用户需求：
 {user_prompt}
 
 可用数据概览：
 {data_summary}
 
-历史洞察（避免重复）：
-{json.dumps(self.insight_history[-3:], ensure_ascii=False, indent=2) if self.insight_history else "无"}
+历史洞察（避免重复，仅展示已验证通过的洞察）：
+{json.dumps(valid_insights[-3:], ensure_ascii=False, indent=2) if valid_insights else "无"}
 """]
         
         # 如果有错误反馈，加入纠错指令
@@ -531,8 +537,12 @@ class MarketInsightSystem:
             return "STOP", f"已达到最大迭代次数 ({self.max_iterations})"
         
         # 规则3: 向量语义分析（新鲜度检查）
-        if self.insight_history:
+        # 仅对审计通过的洞察进行相似度检查，避免错误内容干扰
+        valid_insights = [h for h in self.insight_history if h.get('audit_passed', False)]
+        
+        if valid_insights:
             print(f"\n[Controller - 新鲜度检查] Novelty Checker 启动...")
+            print(f"  ℹ️  对比对象: {len(valid_insights)} 个已验证洞察（已排除 {len(self.insight_history) - len(valid_insights)} 个审计失败项）")
             
             # 方法1: 向量余弦相似度（主要方法）
             current_embedding = self._get_embedding(insight)
@@ -543,15 +553,15 @@ class MarketInsightSystem:
                     self._cosine_similarity(current_embedding, hist_emb)
                     for hist_emb in self.insight_embeddings
                 ]
-                max_similarity = max(similarities)
+                max_similarity = max(similarities) if similarities else 0.0
                 print(f"  📊 向量余弦相似度: {max_similarity:.3f} (阈值: 0.90)")
             else:
-                # 备选方案：文本相似度
+                # 备选方案：文本相似度（仅对审计通过的洞察）
                 similarities = [
-                    SequenceMatcher(None, insight, hist['insight'] if isinstance(hist, dict) else hist).ratio()
-                    for hist in self.insight_history
+                    SequenceMatcher(None, insight, hist['insight']).ratio()
+                    for hist in valid_insights
                 ]
-                max_similarity = max(similarities)
+                max_similarity = max(similarities) if similarities else 0.0
                 print(f"  📊 文本相似度（备选）: {max_similarity:.3f} (阈值: 0.90)")
             
             # 方法2: 新关键词监测（信息密度）
