@@ -6,6 +6,7 @@ XHS-MarketAI System: 自进化数据挖掘机
 import pandas as pd
 import json
 import os
+import sys
 import re
 from typing import Dict, List, Any, Tuple, Set
 from difflib import SequenceMatcher
@@ -13,6 +14,12 @@ from openai import OpenAI
 import numpy as np
 from collections import Counter
 from dotenv import load_dotenv
+
+# 设置标准输出编码为UTF-8（Windows兼容）
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 # 加载 .env 文件中的环境变量
 load_dotenv()
@@ -68,6 +75,34 @@ class MarketInsightSystem:
                 # 添加行索引列用于追溯
                 df['_original_row_index'] = df.index
                 df['_data_source'] = label
+                
+                # 计算高级指标（如果存在相关列）
+                if '搜索次数指数' in df.columns:
+                    # 确保数值类型
+                    df['搜索次数指数'] = pd.to_numeric(df['搜索次数指数'], errors='coerce')
+                    
+                    # 指标1: 内容空白度 = 搜索量 / (自然笔记数+1) - 越高越是蓝海
+                    if '自然笔记数' in df.columns:
+                        # 处理字符串格式（如"2.9万"）
+                        notes = df['自然笔记数'].astype(str).str.replace('万', '0000').str.replace('k', '000')
+                        notes = pd.to_numeric(notes, errors='coerce').fillna(0)
+                        df['_内容空白度'] = df['搜索次数指数'] / (notes + 1)
+                    
+                    # 指标2: 竞争强度 = 自然笔记数 / 搜索次数指数 - 越高竞争越激烈
+                    if '自然笔记数' in df.columns:
+                        notes = df['自然笔记数'].astype(str).str.replace('万', '0000').str.replace('k', '000')
+                        notes = pd.to_numeric(notes, errors='coerce').fillna(0)
+                        df['_竞争强度'] = notes / (df['搜索次数指数'] + 1)
+                    
+                    # 指标3: 广告性价比 = 搜索次数指数 / (广告消耗+1) - 越高越划算
+                    if '广告消耗（元）' in df.columns:
+                        cost = pd.to_numeric(df['广告消耗（元）'], errors='coerce').fillna(0)
+                        df['_广告性价比'] = df['搜索次数指数'] / (cost + 1)
+                    
+                    # 指标4: 自然流量效率 = 自然曝光量指数 / 搜索次数指数
+                    if '自然曝光量指数' in df.columns:
+                        exposure = pd.to_numeric(df['自然曝光量指数'], errors='coerce').fillna(0)
+                        df['_自然流量效率'] = exposure / (df['搜索次数指数'] + 1)
                 
                 data_dict[label] = df
                 print(f"✓ 加载数据: {label} - {len(df)} 行, {len(df.columns)} 列")
@@ -182,39 +217,97 @@ class MarketInsightSystem:
 ## 核心规则（严格遵守）：
 1. **必须基于真实数据**：所有结论必须从下方提供的实际数据中提取，禁止凭空推测或编造数字
 2. **证据必须精确**：引用的数字必须与原始数据完全一致（包括关键词、搜索指数、日期等）
-3. **竞争思维**：每个洞察要分析"松达的机会"和"桃子水的弱点"
-4. **战术落地**：不仅要说"发现了什么"，更要说"松达应该怎么做"
-5. **输出格式严格**：必须按照 JSON 格式输出，字段名必须精确匹配
+3. **多维度分析**：不要只看搜索指数！必须综合分析：
+   - 搜索量 vs 笔记数（内容空白度）
+   - 搜索量 vs 广告成本（性价比）
+   - 自然点击率 vs 广告点击率（内容质量）
+   - 搜索增速（趋势判断）
+   - 潜力分（平台推荐度）
+4. **寻找反常识洞察**：不要只说显而易见的结论，要挖掘：
+   - 搜索高但笔记少的词（真正的蓝海）
+   - 广告成本低但效果好的词（性价比机会）
+   - 增速为正的逆势词（趋势机会）
+   - 点击率异常高/低的词（内容质量信号）
+5. **竞争思维**：每个洞察要分析"松达的机会"和"桃子水的弱点"
+6. **战术落地**：战术建议必须包含：优先级、预算估算、执行路径
+7. **输出格式严格**：必须按照 JSON 格式输出，字段名必须精确匹配
 
 ## 输出格式（严格遵守字段名）：
+
+### 示例1：基础季节性分析
 ```json
 {
-  "insight": "桃子水在6月搜索指数为99300，而12月降至35858，下降63.9%。而'婴儿水'搜索指数从6月18211仅降至12月18698（+2.7%），季节性极弱，是淡季流量的蓝海入口。松达可截流这18698次/月搜索。",
+  "insight": "桃子水在6月搜索指数为99300，而12月降至35858，下降63.9%。而'婴儿水'搜索指数从6月18211仅降至12月18698（+2.7%），季节性极弱，是淡季流量的蓝海入口。",
   "evidence": [
     {"date": "6月", "keyword": "桃子水", "search_index": 99300, "original_row_index": 3},
-    {"date": "12月", "keyword": "桃子水", "search_index": 35858, "original_row_index": 0},
-    {"date": "6月", "keyword": "婴儿水", "search_index": 18211, "original_row_index": 15},
-    {"date": "12月", "keyword": "婴儿水", "search_index": 18698, "original_row_index": 2}
+    {"date": "12月", "keyword": "桃子水", "search_index": 35858, "original_row_index": 0}
   ],
   "tactical_recommendations": [
-    "立即在小红书搜索'婴儿水'时投放松达广告，截流18698次/月的淡季搜索",
-    "创作'婴儿水 vs 松子粉'对比内容，引导用户从桃子水转向松达",
-    "在淡季（12月-次年5月）重点布局'婴儿水'关键词，抢占桃子水淡季流失的用户"
+    "【P0-立即执行】在小红书搜索'婴儿水'时投放松达广告（搜索量18698/月，市场出价参考0.5元，预估预算3000-5000元/月，目标ROI>3）",
+    "【P1-本周内】联系@小红书母婴KOL（粉丝10-50万）创作'婴儿水vs松子粉'对比测评（预算单条2000-5000元，目标曝光10万+，点击率>8%）",
+    "【P2-本月内】布局长尾词'婴儿爽身粉推荐新生儿'（搜索量3852，市场出价仅0.3元，性价比极高，测试预算1000元，目标ROI>5）"
   ],
-  "next_prompt": "深度挖掘：分析搜索'桃子水'的用户在12月淡季还搜索了哪些关联词？这些关联词中，哪些是'桃子水'品牌词未覆盖的空白市场？松达如何利用这些空白词截流桃子水用户？"
+  "next_prompt": "深度挖掘：分析12月数据中哪些关键词的'内容空白度'最高（搜索量高但自然笔记数少）？这些真正的蓝海词为何未被发掘？"
 }
 ```
 
+### 示例2：多维度深度分析（推荐）
+```json
+{
+  "insight": "【反常识发现】'婴儿爽身粉推荐新生儿'搜索指数3852，但自然笔记数仅120条，内容空白度高达32.1（搜索/笔记比），且市场出价仅0.3元，广告性价比是'桃子水'（1.2元）的4倍。这是被低估的黄金长尾词。",
+  "evidence": [
+    {"date": "12月", "keyword": "婴儿爽身粉推荐新生儿", "search_index": 3852, "natural_notes": 120, "ad_cpc": 0.3, "original_row_index": 16},
+    {"date": "12月", "keyword": "桃子水", "search_index": 35858, "natural_notes": 29000, "ad_cpc": 1.2, "original_row_index": 0}
+  ],
+  "tactical_recommendations": [
+    "【P0-今日启动】立即在'婴儿爽身粉推荐新生儿'词下投放搜索广告（出价0.4元，日预算200元，7天测试期，目标CPC<0.5元，ROI>5）",
+    "【P1-本周内】紧急联系3-5个腰部母婴博主（粉丝5-15万），发布'新生儿爽身粉真人测评'笔记，填补内容空白（单条预算1000-2000元，目标自然流量占比>60%）",
+    "【P2-本月内】基于此词衍生'新生儿护肤品推荐'、'新生儿日用品清单'等关联内容矩阵，形成话题垄断"
+  ],
+  "next_prompt": "深度挖掘：分析12月数据中搜索增速为正（逆势增长）的关键词有哪些？它们的自然点击率和广告点击率如何？背后反映了什么用户需求趋势？"
+}
+```
+
+```
+
+## 📊 多维度分析指南（如何发现深度洞察）：
+
+### 1. 内容空白机会分析
+- **计算方法**：内容空白度 = 搜索次数指数 / (自然笔记数 + 1)
+- **黄金阈值**：空白度 > 5 为蓝海机会
+- **分析案例**：如果'婴儿水'搜索18698，但自然笔记只有2000条，空白度=9.3，说明供需失衡，内容机会巨大
+
+### 2. 广告性价比分析
+- **计算方法**：性价比 = 搜索次数指数 / 市场出价（元）
+- **优质标准**：性价比 > 10000 为高性价比词
+- **分析案例**：如果'新生儿爽身粉'搜索3852，市场出价0.3元，性价比=12840，远超'桃子水'（35858/1.2=29881），更值得投放
+
+### 3. 趋势机会分析
+- **关键指标**：搜索增速（正值=上涨，负值=下跌）
+- **逆势机会**：12月整体下跌时，增速为正的词是逆势增长机会
+- **分析案例**：如果大盘增速-5%，某词增速+8%，说明该词正在崛起
+
+### 4. 内容质量分析
+- **关键指标**：自然点击率 vs 广告点击率
+- **优质内容**：自然点击率 > 20% 说明内容吸引力强
+- **广告效率**：广告点击率 > 15% 说明广告素材优秀
+
+### 5. 竞争强度分析
+- **计算方法**：竞争强度 = 自然笔记数 / 搜索次数指数
+- **红海/蓝海**：竞争强度 > 1 为红海（笔记多搜索少），< 0.5 为蓝海
+- **分析案例**：'桃子水'竞争强度=29000/35858=0.81（激烈），'婴儿水'=2000/18698=0.11（蓝海）
+
 ## ⚠️ 关键要求（必须严格遵守）：
-- **evidence 字段名必须是**: date, keyword, search_index, original_row_index（不能使用 row）
+- **evidence 字段必须包含**: date, keyword, search_index, original_row_index（必须字段）
+- **evidence 可选字段**：natural_notes（自然笔记数）, ad_cpc（市场出价）, search_growth（搜索增速）, content_gap（内容空白度）等
 - **keyword 必须从下方数据的'搜索词'列中精确复制**，不能修改或简化
 - **search_index 必须从下方数据的'搜索次数指数'列中精确复制**，不能四舍五入或估算
 - **original_row_index 是数据在表格中的行号**（从0开始，看数据示例左侧的序号）
 - **date 必须是'6月'或'12月'**，对应数据来源
-- **tactical_recommendations 必须包含3个可执行的战术建议**：具体到"在哪投广告"、"创作什么内容"、"布局哪些词"
-- **next_prompt 必须深入且具有战略性**：不能只是"继续分析XXX"，而要提出"挖掘更深层价值"的问题，如"竞争盲区在哪"、"用户心理如何漂移"、"蓝海词的隐藏机会"
+- **tactical_recommendations 格式**：【优先级-时间要求】具体行动（关键数据，预算估算，目标指标）
+- **next_prompt 必须深入且具有战略性**：聚焦多维度分析，如"哪些词内容空白度最高"、"哪些词性价比最优"、"哪些词逆势增长"
 - **每个结论都要有2-4个证据支撑**，形成完整的数据链条
-- **禁止编造数据**：如果数据中没有某个关键词，绝对不能虚构其搜索指数
+- **禁止编造数据**：如果数据中没有某个关键词或指标，绝对不能虚构
 """
         
         # 构建用户消息，包含错误反馈
@@ -274,14 +367,29 @@ class MarketInsightSystem:
             return result
             
         except json.JSONDecodeError as e:
-            print(f"JSON 解析失败: {e}")
-            print(f"原始响应: {response}")
+            print(f"\n❌ JSON 解析失败: {e}")
+            print(f"\n原始响应 (前500字符):\n{response[:500]}...")
+            print(f"\n原始响应 (后500字符):\n...{response[-500:]}")
+            
+            # 保存完整原始响应到文件用于调试
+            error_file = f"error_response_round_{self.iteration_count + 1}.txt"
+            try:
+                with open(error_file, 'w', encoding='utf-8') as f:
+                    f.write(f"Iteration: {self.iteration_count + 1}\n")
+                    f.write(f"Error: {e}\n\n")
+                    f.write(f"Raw Response:\n{response}")
+                print(f"ℹ️  完整响应已保存到: {error_file}")
+            except:
+                pass
+            
+            # 返回明确标记为解析失败的结果，不会被审计通过
             return {
-                "insight": "解析失败，请检查响应格式",
+                "insight": f"【解析失败】LLM输出格式不符合JSON规范，详见{error_file}",
                 "evidence": [],
-                "tactical_recommendations": ["解析失败，无法生成战术建议"],
+                "tactical_recommendations": [],
                 "next_prompt": user_prompt,
-                "raw_response": response
+                "_parse_error": True,  # 标记解析错误
+                "_raw_response": response[:1000]  # 保存部分原始响应
             }
     
     def _build_data_summary(self, data_dict: Dict[str, pd.DataFrame]) -> str:
@@ -313,12 +421,27 @@ class MarketInsightSystem:
                 summary_lines.append(f"  - 你必须使用 keyword='{keyword_col}列的值', search_index={search_col}列的值")
             
             # 显示更多数据行，让LLM能真正看到数据内容
-            summary_lines.append(f"\n【前20行数据示例】（含行号用于追溯）：")
-            # 选择关键列展示
+            summary_lines.append(f"\n【前20行数据示例 - 多维度分析】（含行号用于追溯）：")
+            # 选择关键列展示，包括高级指标
             if keyword_col and search_col:
                 display_cols = [keyword_col, search_col]
+                # 添加其他重要维度
+                optional_cols = ['自然笔记数', '广告笔记数', '自然点击率', '广告消耗（元）', 
+                                '市场出价（元）', '搜索增速', '潜力分', 
+                                '_内容空白度', '_竞争强度', '_广告性价比']
+                for col in optional_cols:
+                    if col in df.columns:
+                        display_cols.append(col)
+                
                 display_df = df[display_cols].head(20).copy()
                 display_df.insert(0, 'row_index', df['_original_row_index'].head(20))
+                
+                # 格式化数值列，保留2位小数
+                for col in display_df.columns:
+                    if col != 'row_index' and col in df.columns:
+                        if df[col].dtype in ['float64', 'float32']:
+                            display_df[col] = display_df[col].apply(lambda x: f"{x:.2f}" if pd.notnull(x) else '-')
+                
                 summary_lines.append(display_df.to_string(index=False))
             else:
                 key_columns = [col for col in df.columns if col not in ['_original_row_index', '_data_source']]
@@ -333,6 +456,25 @@ class MarketInsightSystem:
             
             if search_col:
                 summary_lines.append(f"- 搜索指数: 最小={df[search_col].min()}, 最大={df[search_col].max()}, 平均={df[search_col].mean():.0f}")
+            
+            # 展示高级指标统计
+            if '_内容空白度' in df.columns:
+                summary_lines.append(f"- 内容空白度（搜索量/笔记数）: 平均={df['_内容空白度'].mean():.2f}, 最大={df['_内容空白度'].max():.2f}")
+                summary_lines.append(f"  提示: 空白度>5为蓝海机会")
+            
+            if '_广告性价比' in df.columns:
+                valid_data = df[df['_广告性价比'] < 999999]  # 过滤异常值
+                if len(valid_data) > 0:
+                    summary_lines.append(f"- 广告性价比（搜索量/广告消耗）: 平均={valid_data['_广告性价比'].mean():.2f}")
+            
+            if '搜索增速' in df.columns:
+                try:
+                    growth_stats = df['搜索增速'].describe()
+                    summary_lines.append(f"- 搜索增速范围: {growth_stats.get('min', 'N/A')} ~ {growth_stats.get('max', 'N/A')}, 平均={growth_stats.get('mean', 'N/A')}")
+                except:
+                    pass  # 如果搜索增速是字符串格式，跳过统计
+            
+            if search_col:
                 # TOP 10 关键词
                 top_keywords = df.nlargest(10, search_col)[[keyword_col, search_col, '_original_row_index']]
                 summary_lines.append(f"\n【TOP 10 高搜索指数关键词】：")
@@ -341,15 +483,21 @@ class MarketInsightSystem:
         return "\n".join(summary_lines)
     
     # ==================== 组件 B: The Auditor ====================
-    def auditor_verify_evidence(self, evidence: List[Dict], data_dict: Dict[str, pd.DataFrame], insight: str = "") -> Tuple[bool, str, str]:
+    def auditor_verify_evidence(self, evidence: List[Dict], data_dict: Dict[str, pd.DataFrame], insight: str = "", is_parse_error: bool = False) -> Tuple[bool, str, str]:
         """
         事实审计员：硬核验证证据真实性（防止AI幻觉）
         Args:
             evidence: Analyst 提交的证据列表
             data_dict: 原始数据字典
+            insight: 洞察结论
+            is_parse_error: 是否是JSON解析错误
         Returns:
             (is_passed, log_message, error_feedback)
         """
+        # 如果是解析错误，直接拒绝
+        if is_parse_error:
+            return False, "❌ 解析错误：LLM输出格式不符合JSON规范，无法验证证据", "请检查Prompt或减少上下文长度"
+        
         if not evidence:
             return False, "❌ 证据列表为空，无法验证", "证据列表为空，请提供有效的证据支持"
         
@@ -612,10 +760,12 @@ class MarketInsightSystem:
         
         # 步骤 2: Auditor 验证证据（数据验证 + 逻辑审计）
         print("\n[Auditor] 正在验证证据...")
+        is_parse_error = analyst_result.get('_parse_error', False)
         audit_passed, audit_log, error_feedback = self.auditor_verify_evidence(
             analyst_result.get('evidence', []),
             data_dict,
-            analyst_result.get('insight', '')
+            analyst_result.get('insight', ''),
+            is_parse_error=is_parse_error
         )
         print(audit_log)
         
@@ -880,6 +1030,153 @@ class MarketInsightSystem:
         print(f"发现关键词数: {len(self.keywords_pool)}")
         
         return all_results
+    
+    def generate_executive_report(self, all_results: List[Dict[str, Any]], 
+                                  initial_prompt: str = "") -> str:
+        """
+        生成高质量的执行摘要报告（仅包含审计通过的核心洞察）
+        
+        这是给决策者看的精简报告，包含：
+        1. 核心发现TOP5
+        2. 优先级行动计划（P0/P1/P2）
+        3. 关键数据证据
+        4. 风险提示
+        
+        Args:
+            all_results: 所有轮次的结果
+            initial_prompt: 初始分析需求
+        Returns:
+            高质量Markdown报告
+        """
+        md = []
+        
+        # 标题
+        md.append("# 🎯 市场洞察执行报告\n\n")
+        md.append(f"**生成时间**: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        md.append(f"**报告版本**: Executive Summary v3.0\n\n")
+        md.append("---\n\n")
+        
+        # 只保留审计通过的结果
+        valid_results = [r for r in all_results if r['audit_report']['is_passed']]
+        failed_results = [r for r in all_results if not r['audit_report']['is_passed']]
+        
+        # 1. 执行摘要
+        md.append("## 📊 执行摘要\n\n")
+        md.append(f"- **分析轮数**: {len(all_results)} 轮\n")
+        md.append(f"- **高质量洞察**: {len(valid_results)} 条（审计通过）\n")
+        md.append(f"- **被拒绝分析**: {len(failed_results)} 条（数据问题）\n")
+        
+        # 计算总证据数
+        total_evidence = sum(len(r['analyst_result'].get('evidence_trace', [])) for r in valid_results)
+        md.append(f"- **数据证据总数**: {total_evidence} 条\n")
+        md.append(f"- **数据可信度**: {len(valid_results)/len(all_results)*100:.1f}%\n\n")
+        
+        if initial_prompt:
+            md.append("### 分析目标\n\n")
+            md.append(f"```\n{initial_prompt.strip()}\n```\n\n")
+        
+        # 2. 核心发现TOP5
+        md.append("## 💡 核心发现 TOP5\n\n")
+        for i, result in enumerate(valid_results[:5], 1):
+            insight = result['analyst_result']['insight']
+            evidence_count = len(result['analyst_result'].get('evidence_trace', []))
+            md.append(f"### {i}. {insight[:100]}{'...' if len(insight) > 100 else ''}\n\n")
+            md.append(f"**数据支撑**: {evidence_count} 条证据\n\n")
+            
+            # 显示关键证据
+            evidences = result['analyst_result'].get('evidence_trace', [])
+            if evidences:
+                md.append("**关键数据**:\n")
+                for ev in evidences[:3]:  # 只显示前3条
+                    keyword = ev.get('keyword', '-')
+                    search_index = ev.get('search_index', '-')
+                    date = ev.get('date', '-')
+                    md.append(f"- {date}: '{keyword}' 搜索指数 {search_index:,}\n")
+                md.append("\n")
+        
+        # 3. 优先级行动计划
+        md.append("## 🎯 优先级行动计划\n\n")
+        
+        # 收集所有战术建议并分类
+        p0_actions = []
+        p1_actions = []
+        p2_actions = []
+        other_actions = []
+        
+        for result in valid_results:
+            recs = result['analyst_result'].get('tactical_recommendations', [])
+            for rec in recs:
+                if '【P0' in rec or '【P0' in rec:
+                    p0_actions.append(rec)
+                elif '【P1' in rec or '【P1' in rec:
+                    p1_actions.append(rec)
+                elif '【P2' in rec or '【P2' in rec:
+                    p2_actions.append(rec)
+                else:
+                    other_actions.append(rec)
+        
+        if p0_actions:
+            md.append("### 🔴 P0优先级 - 立即执行（1-3天）\n\n")
+            for i, action in enumerate(p0_actions, 1):
+                md.append(f"{i}. {action}\n\n")
+        
+        if p1_actions:
+            md.append("### 🟡 P1优先级 - 本周内执行（3-7天）\n\n")
+            for i, action in enumerate(p1_actions, 1):
+                md.append(f"{i}. {action}\n\n")
+        
+        if p2_actions:
+            md.append("### 🟢 P2优先级 - 本月内执行（1-4周）\n\n")
+            for i, action in enumerate(p2_actions, 1):
+                md.append(f"{i}. {action}\n\n")
+        
+        # 4. 关键数据总览
+        md.append("## 📈 关键数据总览\n\n")
+        md.append("### 已验证的核心数据点\n\n")
+        md.append("| 轮次 | 关键词 | 搜索指数 | 数据源 | 行号 |\n")
+        md.append("|------|--------|----------|--------|------|\n")
+        
+        for i, result in enumerate(valid_results, 1):
+            evidences = result['analyst_result'].get('evidence_trace', [])
+            for ev in evidences[:2]:  # 每轮显示2条关键证据
+                keyword = ev.get('keyword', '-')
+                search_index = ev.get('search_index', '-')
+                date = ev.get('date', '-')
+                row = ev.get('original_row_index', '-')
+                md.append(f"| 第{i}轮 | {keyword} | {search_index:,} | {date} | {row} |\n")
+        
+        md.append("\n")
+        
+        # 5. 风险提示
+        if failed_results:
+            md.append("## ⚠️ 风险提示与被拒绝的分析\n\n")
+            md.append(f"系统在 {len(failed_results)} 轮分析中发现数据质量问题，已自动拒绝：\n\n")
+            for i, result in enumerate(failed_results, 1):
+                reason = result['controller_decision'].get('reason', '未知原因')
+                md.append(f"{i}. **第{result.get('iteration', '?')}轮**: {reason}\n")
+            md.append("\n这些被拒绝的分析不会影响最终建议的可信度。\n\n")
+        
+        # 6. 数据来源说明
+        md.append("## 📚 数据来源\n\n")
+        md.append("本报告的所有洞察和建议均基于以下已验证的数据源：\n\n")
+        md.append("- **数据时间**: 2025年6月（旺季）、2025年12月（淡季）\n")
+        md.append("- **数据维度**: 搜索指数、自然笔记数、广告消耗、市场出价、搜索增速等25个维度\n")
+        md.append(f"- **验证证据数**: {total_evidence} 条\n")
+        md.append(f"- **数据可信度**: {len(valid_results)/len(all_results)*100:.1f}%（通过审计比例）\n\n")
+        
+        # 7. 下一步建议
+        if valid_results:
+            last_valid = valid_results[-1]
+            next_prompt = last_valid.get('system_generated_next_prompt', '')
+            if next_prompt:
+                md.append("## 🔮 深度挖掘建议\n\n")
+                md.append(f"> {next_prompt}\n\n")
+        
+        md.append("---\n\n")
+        md.append("**报告说明**: 本报告仅包含通过数据审计的高质量洞察，所有数据均可追溯到原始行号。\n\n")
+        md.append(f"*由 XHS-MarketAI v3.0 自动生成 | {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}*\n")
+        
+        return "".join(md)
 
 
 # ==================== 测试代码 ====================
@@ -977,11 +1274,18 @@ def main():
             json.dump(output, f, ensure_ascii=False, indent=2)
         print("\n✅ JSON 结果已保存至: insight_full_cycle.json")
         
-        # 保存 Markdown 报告
+        # 保存 Markdown 报告（完整版，包含所有轮次）
         markdown_report = system.generate_full_markdown_report(all_results, user_initial_prompt)
         with open("insight_full_cycle.md", "w", encoding="utf-8") as f:
             f.write(markdown_report)
-        print("✅ Markdown 报告已保存至: insight_full_cycle.md")
+        print("✅ 完整报告已保存至: insight_full_cycle.md")
+        
+        # 🎯 生成高质量执行摘要报告（仅包含审计通过的核心洞察）
+        executive_report = system.generate_executive_report(all_results, user_initial_prompt)
+        with open("EXECUTIVE_SUMMARY.md", "w", encoding="utf-8") as f:
+            f.write(executive_report)
+        print("✅ 🎯 执行摘要报告已保存至: EXECUTIVE_SUMMARY.md")
+        print("   （这是给决策者看的精简版，仅包含高质量洞察和行动计划）")
         
         # 输出关键发现
         print("\n" + "="*80)
