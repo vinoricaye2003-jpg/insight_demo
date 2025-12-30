@@ -1,247 +1,266 @@
-# XHS-MarketAI System - 自进化数据挖掘机 (Self-Evolving Data Miner)
+# XHS-MarketAI 市场洞察系统 v4.0
 
-## 📋 系统概述
+**自进化数据挖掘机 - 三智能体协同洞察引擎**
 
-**XHS-MarketAI 洞察闭环系统**是一个基于 DeepSeek API 的智能市场洞察系统，能够自动分析小红书/电商数据，通过迭代式挖掘生成可验证的市场洞察。
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+---
+
+## 🎯 系统概览
+
+XHS-MarketAI 是一个基于多智能体架构的市场洞察系统，专为小红书(XHS)搜索数据分析设计。通过 **Analyst（分析师）**、**Auditor（审计师）** 和 **Controller（控制器）** 三个智能体的协同工作，实现数据驱动的深度洞察挖掘。
 
 ### 核心特性
-- ✅ **Analyst (洞察生成专家)**: 基于 LLM 的智能数据分析，自动生成下一轮挖掘指令
-- ✅ **Auditor (事实审计员)**: 
-  - 数据验证：硬核校验防止 AI 幻觉
-  - 逻辑审计：检查推理是否过度
-  - 纠错反馈：发现错误自动反馈给 Analyst
-- ✅ **Controller (逻辑控制器)**: 
-  - 向量语义分析（Embedding + 余弦相似度）
-  - 连续高相似度检测（连续2轮 > 0.9 自动停止）
-  - 新关键词密度监测
-  - 自动化迭代控制
 
-### 系统架构
+- ✅ **三智能体协同架构**：分析→审计→决策闭环
+- ✅ **自动证据验证**：100%数据溯源，杜绝幻觉
+- ✅ **智能新鲜度检查**：自动识别重复洞察，保证内容独特性
+- ✅ **反常识洞察框架**：5维分析（逆势增长、反季节、非主流、空白机会、对抗性趋势）
+- ✅ **强制6月vs12月对比**：季节性分析内置
+- ✅ **数据质量自适应**：自动检测并禁用缺失维度分析
+- ✅ **战术建议多样化**：8种策略类型（SEO优化、内容营销、竞品对标等）
 
-```
-初始提示 → Analyst (生成洞察 + 证据 + 下一轮指令)
-              ↓
-         Auditor (数据验证 + 逻辑审计)
-              ↓
-         Controller (新鲜度检查: 向量相似度 + 关键词密度)
-              ↓
-      CONTINUE → 自动进入下一轮 / STOP → 输出完整结果
-```
+---
 
 ## 🚀 快速开始
 
-### 1. 环境配置
-
-#### 创建虚拟环境（推荐）
-
-**Windows (PowerShell):**
-```powershell
-# 创建虚拟环境
-python -m venv venv
-
-# 激活虚拟环境
-.\venv\Scripts\Activate.ps1
-
-# 如果遇到权限错误，执行：
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-```
-
-**macOS/Linux:**
-```bash
-# 创建虚拟环境
-python3 -m venv venv
-
-# 激活虚拟环境
-source venv/bin/activate
-```
-
-### 2. 安装依赖
+### 1. 环境设置
 
 ```bash
-pip install -r requirements.txt
+# Windows
+setup.bat
+
+# Linux/macOS
+chmod +x setup.sh
+./setup.sh
 ```
 
-**依赖包说明:**
-- `pandas`: 数据处理和分析
-- `openpyxl`: Excel 文件读取支持
-- `openai`: DeepSeek API 客户端（兼容 OpenAI SDK）
+### 2. 配置API密钥
 
-### 3. 配置 API Key
-
-#### 方法 1: 环境变量（推荐）
-
-**Windows (PowerShell):**
-```powershell
-$env:DEEPSEEK_API_KEY="your_api_key_here"
-```
-
-**macOS/Linux:**
-```bash
-export DEEPSEEK_API_KEY="your_api_key_here"
-```
-
-#### 方法 2: .env 文件
+复制 `.env.example` 为 `.env`，填入你的 DashScope API Key：
 
 ```bash
-# 复制示例文件
-cp .env.example .env
-
-# 编辑 .env 文件，填入你的 API Key
+DASHSCOPE_API_KEY=sk-your-api-key-here
 ```
 
-#### 方法 3: 代码中直接设置
+> 获取API Key: [https://dashscope.console.aliyun.com/](https://dashscope.console.aliyun.com/)
 
-在 `market_insight_system.py` 的 `main()` 函数中：
-```python
-system = MarketInsightSystem(api_key="your_api_key_here")
+### 3. 准备数据
+
+将Excel数据文件放入 `data/` 目录，格式要求：
+
 ```
+data/
+├── 搜索词-2025-6月.xlsx
+└── 搜索词-2025-12月.xlsx
+```
+
+必需列：`搜索词`, `搜索次数指数`, `自然笔记数`, `商业笔记数`, `标题`, `内容`
 
 ### 4. 运行系统
 
 ```bash
+# 单轮测试（仅第一轮）
 python market_insight_system.py
+
+# 或使用批处理脚本
+run.bat
 ```
-
-## 📊 数据文件要求
-
-系统会自动加载以下文件：
-- `搜索词-2025-6月.xlsx - Sheets1.csv`
-- `搜索词-2025-12月.xlsx - Sheets1.csv`
-
-**数据格式要求:**
-- 必须包含 `关键词` 列
-- 推荐包含 `搜索指数`、`笔记数`、`互动数` 等列
-- CSV 文件编码：UTF-8
-
-## 🔧 高级配置
-
-### 修改模型参数
-
-在代码中找到 `MarketInsightSystem` 类的初始化：
-
-```python
-system = MarketInsightSystem(
-    api_key="your_key",
-    model="deepseek-chat",  # 可选：deepseek-coder
-)
-```
-
-### 调整迭代次数
-
-```python
-system.max_iterations = 5  # 默认 5 轮
-```
-
-### 自定义分析提示词
-
-修改 `user_initial_prompt` 变量：
-```python
-user_initial_prompt = """
-[核心背景]
-你的产品和竞品信息...
-
-[分析要求]
-你的具体分析需求...
-"""
-```
-
-## 📤 输出说明
-
-### 控制台输出
-- 实时显示每轮分析进度
-- 显示审计验证结果
-- 显示控制器决策
-
-### JSON 文件输出
-生成 `insight_result_round1.json`，包含：
-```json
-{
-  "status": "Success",
-  "iteration": 1,
-  "audit_report": {
-    "is_passed": true,
-    "log": "验证日志..."
-  },
-  "analyst_result": {
-    "insight": "洞察结论...",
-    "evidence_trace": [...]
-  },
-  "system_generated_next_prompt": "下一轮分析建议...",
-  "controller_decision": "CONTINUE"
-}
-```
-
-## 🐛 常见问题
-
-### 1. API 调用失败
-- 检查 API Key 是否正确
-- 检查网络连接
-- 确认 DeepSeek API 余额
-
-### 2. 数据加载失败
-- 确认文件路径正确
-- 检查 CSV 编码（推荐 UTF-8）
-- 确认列名包含中文时没有乱码
-
-### 3. 证据验证失败
-- 检查数据列名是否正确（如 `关键词`、`搜索指数`）
-- 确认数据中确实存在 LLM 提到的关键词
-- 调低温度参数（temperature）提高精确度
-
-## 📈 系统架构
-
-```
-用户输入 → Analyst (LLM 分析)
-              ↓
-         生成洞察 + 证据
-              ↓
-         Auditor (数据验证)
-              ↓
-         Controller (决策)
-              ↓
-      CONTINUE → 下一轮 / STOP → 输出结果
-```
-
-## 🎯 使用示例
-
-### 案例：松达松子粉 vs 贝亲桃子水
-
-系统会自动：
-1. 对比 6 月和 12 月的搜索数据
-2. 识别季节性差异
-3. 发现淡季布局机会词
-4. 验证所有数值证据
-5. 生成下一轮挖掘建议
-
-## 📝 开发说明
-
-### 扩展系统
-
-1. **添加新数据源**: 修改 `load_data()` 方法
-2. **自定义验证逻辑**: 扩展 `auditor_verify_evidence()` 方法
-3. **调整决策策略**: 修改 `controller_decide_next()` 方法
-
-### 多轮迭代运行
-
-```python
-# 在 main() 函数中添加循环
-current_prompt = user_initial_prompt
-for i in range(5):
-    result = system.run_single_iteration(current_prompt, data_dict)
-    if result["controller_decision"] == "STOP":
-        break
-    current_prompt = result["system_generated_next_prompt"]
-```
-
-## 📞 支持
-
-如有问题，请检查：
-1. Python 版本 >= 3.8
-2. 依赖包版本兼容性
-3. API Key 权限
-4. 数据文件格式
 
 ---
 
-**版本**: 1.0.0  
-**最后更新**: 2025-12-29
+## 📊 输出文件
+
+运行后会在 `output/` 目录生成：
+
+| 文件 | 说明 |
+|------|------|
+| `EXECUTIVE_SUMMARY.md` | 🎯 **执行摘要**（决策者首选） |
+| `insight_full_cycle.md` | 完整分析报告（所有轮次） |
+| `insight_full_cycle.json` | 结构化数据（可编程调用） |
+| `insight_result_round1.md` | 单轮测试报告 |
+
+---
+
+## 🧪 测试验证
+
+运行改进测试套件：
+
+```bash
+python test_improvements.py
+```
+
+验证内容：
+- ✅ 自然笔记数范围值解析（"9000-10000" → 9500）
+- ✅ 数据质量检查（市场出价全0自动禁用）
+- ✅ 6月vs12月对比数据准备
+- ✅ System Prompt核心改进点
+
+---
+
+## 🏗️ 系统架构
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                   Controller（控制器）                    │
+│  • 证据验证（100%溯源）                                   │
+│  • 新鲜度检查（去重）                                     │
+│  • 决策引擎（CONTINUE/STOP）                             │
+└────────────┬────────────────────────────┬────────────────┘
+             │                            │
+      ┌──────▼──────┐            ┌───────▼───────┐
+      │   Analyst   │◄───────────┤    Auditor    │
+      │  （分析师）  │   错误反馈   │   （审计师）  │
+      │  生成洞察    │            │   验证证据    │
+      └─────────────┘            └───────────────┘
+```
+
+### 工作流程
+
+1. **Analyst** 分析数据，生成洞察（包含6月vs12月对比）
+2. **Auditor** 逐条验证证据（关键词、数值、行号）
+3. **Controller** 审查结果：
+   - 证据通过 → 新鲜度检查 → 决策是否继续
+   - 证据失败 → 反馈错误 → Analyst修正（最多2次）
+
+---
+
+## 📚 项目结构
+
+```
+insight_demo/
+├── market_insight_system.py    # 主系统（1418行）
+├── test_improvements.py         # 测试套件
+├── requirements.txt             # Python依赖
+├── .env.example                 # 环境变量模板
+├── data/                        # 📁 数据文件
+│   ├── 搜索词-2025-6月.xlsx
+│   └── 搜索词-2025-12月.xlsx
+├── output/                      # 📁 输出结果
+│   ├── EXECUTIVE_SUMMARY.md
+│   ├── insight_full_cycle.md
+│   └── insight_full_cycle.json
+└── docs/                        # 📁 技术文档
+    ├── SYSTEM_ARCHITECTURE.md   # 架构详解
+    ├── ENV_SETUP.md             # 环境配置
+    ├── OUTPUT_FORMATS.md        # 输出格式说明
+    ├── QWEN_SETUP.md            # Qwen API配置
+    └── history/                 # 历史报告
+        ├── SELF_AUDIT_REPORT.md
+        ├── IMPROVEMENT_COMPLETION_REPORT.md
+        └── ...
+```
+
+---
+
+## 🔧 技术栈
+
+- **Python 3.8+**
+- **通义千问 (Qwen-Plus)**: 多智能体推理引擎
+- **Pandas**: 数据处理
+- **OpenAI SDK**: DashScope API调用
+- **Python-dotenv**: 环境变量管理
+
+---
+
+## 📖 文档索引
+
+| 文档 | 说明 |
+|------|------|
+| [SYSTEM_ARCHITECTURE.md](docs/SYSTEM_ARCHITECTURE.md) | 系统架构详解（三智能体设计） |
+| [ENV_SETUP.md](docs/ENV_SETUP.md) | 环境配置指南 |
+| [OUTPUT_FORMATS.md](docs/OUTPUT_FORMATS.md) | 输出文件格式说明 |
+| [QWEN_SETUP.md](docs/QWEN_SETUP.md) | 通义千问API配置 |
+| [运行指南.md](运行指南.md) | 中文详细运行手册 |
+
+---
+
+## 💡 使用技巧
+
+### 1. 单轮测试 vs 完整循环
+
+- **单轮测试**：快速验证系统功能，生成第一轮洞察（约1-2分钟）
+- **完整循环**：自动迭代5-10轮，直到无新发现（约5-15分钟）
+
+### 2. 读取输出
+
+优先级：`EXECUTIVE_SUMMARY.md` > `insight_full_cycle.md` > JSON
+
+**EXECUTIVE_SUMMARY.md** 仅包含高质量洞察（审计通过+新鲜度合格），适合决策者快速阅读。
+
+### 3. 自定义配置
+
+修改 `market_insight_system.py` 第1390-1404行：
+
+```python
+# 自定义输出路径
+output_json = "output/my_result.json"
+output_md = "output/my_result.md"
+summary_path = "output/MY_SUMMARY.md"
+```
+
+---
+
+## ⚠️ 常见问题
+
+### Q1: API Key错误
+
+**问题**: `AuthenticationError: Incorrect API key provided`
+
+**解决**: 检查 `.env` 文件中 `DASHSCOPE_API_KEY` 是否正确，确保已充值。
+
+---
+
+### Q2: 数据文件找不到
+
+**问题**: `FileNotFoundError: 搜索词-2025-6月.xlsx`
+
+**解决**: 确保数据文件在 `data/` 目录下，且文件名完全匹配。
+
+---
+
+### Q3: Embedding模型404错误
+
+**问题**: `Error code: 404 - The model 'text-embedding-3-small' does not exist`
+
+**解决**: 这是正常的，系统会自动降级到文本相似度算法，不影响功能。
+
+---
+
+## 🔮 版本历史
+
+### v4.0 (当前版本)
+- ✅ 6月vs12月强制对比分析
+- ✅ 自然笔记数范围值智能解析
+- ✅ 市场出价数据质量自动检测
+- ✅ 反常识洞察框架（5维分析）
+- ✅ 战术建议多样化（8类策略）
+- ✅ 竞品对比维度强化
+
+### v3.0
+- 三智能体协同架构
+- 证据验证系统
+- 新鲜度检查机制
+
+---
+
+## 📜 License
+
+MIT License - 详见 [LICENSE](LICENSE) 文件
+
+---
+
+## 👥 贡献
+
+欢迎提交 Issue 和 Pull Request！
+
+---
+
+## 📧 联系方式
+
+如有问题或建议，请提交 GitHub Issue。
+
+---
+
+**Made with ❤️ for Data-Driven Marketing**

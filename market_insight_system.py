@@ -51,7 +51,53 @@ class MarketInsightSystem:
         self.keywords_pool = set()  # 已发现的关键词池
         self.high_similarity_count = 0  # 连续高相似度计数
         self.error_feedback = None  # 错误反馈信息
+        self.disabled_features = set()  # 禁用的功能（如市场出价分析）
         
+    def _parse_notes_value(self, value) -> float:
+        """
+        解析自然笔记数的各种格式
+        Args:
+            value: 笔记数值（可能是数字、"2.9万"、"9000-10000"等格式）
+        Returns:
+            解析后的数值
+        """
+        value_str = str(value).strip()
+        
+        # 处理范围值（如"9000-10000"）
+        if '-' in value_str and not value_str.startswith('-'):
+            # 检查是否是数字范围
+            parts = value_str.split('-')
+            if len(parts) == 2:
+                try:
+                    # 尝试解析为数字范围，取中值
+                    low = float(parts[0].replace(',', ''))
+                    high = float(parts[1].replace(',', ''))
+                    return (low + high) / 2
+                except ValueError:
+                    pass
+        
+        # 处理"万"单位（如"2.9万"）
+        if '万' in value_str:
+            try:
+                num = float(value_str.replace('万', '').replace(',', ''))
+                return num * 10000
+            except ValueError:
+                pass
+        
+        # 处理"k"单位
+        if 'k' in value_str.lower():
+            try:
+                num = float(value_str.lower().replace('k', '').replace(',', ''))
+                return num * 1000
+            except ValueError:
+                pass
+        
+        # 尝试直接转换为数字
+        try:
+            return float(value_str.replace(',', ''))
+        except ValueError:
+            return 0.0
+    
     def load_data(self, file_paths: List[str], labels: List[str] = None) -> Dict[str, pd.DataFrame]:
         """
         加载多个数据文件
@@ -83,16 +129,13 @@ class MarketInsightSystem:
                     
                     # 指标1: 内容空白度 = 搜索量 / (自然笔记数+1) - 越高越是蓝海
                     if '自然笔记数' in df.columns:
-                        # 处理字符串格式（如"2.9万"）
-                        notes = df['自然笔记数'].astype(str).str.replace('万', '0000').str.replace('k', '000')
-                        notes = pd.to_numeric(notes, errors='coerce').fillna(0)
-                        df['_内容空白度'] = df['搜索次数指数'] / (notes + 1)
+                        # 使用新的解析函数处理各种格式（包括范围值）
+                        df['自然笔记数_数值'] = df['自然笔记数'].apply(self._parse_notes_value)
+                        df['_内容空白度'] = df['搜索次数指数'] / (df['自然笔记数_数值'] + 1)
                     
                     # 指标2: 竞争强度 = 自然笔记数 / 搜索次数指数 - 越高竞争越激烈
-                    if '自然笔记数' in df.columns:
-                        notes = df['自然笔记数'].astype(str).str.replace('万', '0000').str.replace('k', '000')
-                        notes = pd.to_numeric(notes, errors='coerce').fillna(0)
-                        df['_竞争强度'] = notes / (df['搜索次数指数'] + 1)
+                    if '自然笔记数_数值' in df.columns:
+                        df['_竞争强度'] = df['自然笔记数_数值'] / (df['搜索次数指数'] + 1)
                     
                     # 指标3: 广告性价比 = 搜索次数指数 / (广告消耗+1) - 越高越划算
                     if '广告消耗（元）' in df.columns:
@@ -106,6 +149,13 @@ class MarketInsightSystem:
                 
                 data_dict[label] = df
                 print(f"✓ 加载数据: {label} - {len(df)} 行, {len(df.columns)} 列")
+                
+                # 数据质量检查
+                if '市场出价（元）' in df.columns:
+                    market_price_sum = pd.to_numeric(df['市场出价（元）'], errors='coerce').fillna(0).sum()
+                    if market_price_sum == 0:
+                        print(f"⚠️ 警告：{label}的市场出价数据全为0，相关分析将被禁用")
+                        self.disabled_features.add('市场出价分析')
                 
             except Exception as e:
                 print(f"✗ 加载失败 {path}: {e}")
@@ -206,7 +256,10 @@ class MarketInsightSystem:
         # 构建数据概览
         data_summary = self._build_data_summary(data_dict)
         
-        system_prompt = """你是一位资深市场战略分析师，专注于小红书电商数据挖掘和竞争情报分析。
+        # 根据数据质量检查，动态调整System Prompt
+        market_price_disabled = '市场出价分析' in self.disabled_features
+        
+        system_prompt = f"""你是一位资深市场战略分析师，专注于小红书电商数据挖掘和竞争情报分析。
 
 ## 【战略背景】
 - **我方产品**：松达松子粉（婴儿爽身粉）
@@ -214,101 +267,165 @@ class MarketInsightSystem:
 - **战略目标**：从竞品手中抢夺市场份额，寻找攻击缺口和蓝海机会
 - **分析视角**：每个洞察都要回答"如何利用这个发现击败桃子水"
 
-## 核心规则（严格遵守）：
-1. **必须基于真实数据**：所有结论必须从下方提供的实际数据中提取，禁止凭空推测或编造数字
-2. **证据必须精确**：引用的数字必须与原始数据完全一致（包括关键词、搜索指数、日期等）
-3. **多维度分析**：不要只看搜索指数！必须综合分析：
-   - 搜索量 vs 笔记数（内容空白度）
-   - 搜索量 vs 广告成本（性价比）
-   - 自然点击率 vs 广告点击率（内容质量）
-   - 搜索增速（趋势判断）
-   - 潜力分（平台推荐度）
-4. **寻找反常识洞察**：不要只说显而易见的结论，要挖掘：
-   - 搜索高但笔记少的词（真正的蓝海）
-   - 广告成本低但效果好的词（性价比机会）
-   - 增速为正的逆势词（趋势机会）
-   - 点击率异常高/低的词（内容质量信号）
-5. **竞争思维**：每个洞察要分析"松达的机会"和"桃子水的弱点"
-6. **战术落地**：战术建议必须包含：优先级、预算估算、执行路径
-7. **输出格式严格**：必须按照 JSON 格式输出，字段名必须精确匹配
+## 🚨 核心规则（严格遵守）：
+
+### 规则1: **强制6月vs12月对比分析**（最重要！）
+- ❌ **禁止**：只分析单一月份（如"在12月数据中..."）
+- ✅ **必须**：每个洞察至少包含1组6月vs12月的数据对比
+- ✅ **必须**：evidence字段同时包含6月和12月的数据
+- ✅ **必须**：分析季节性差异（上涨/下跌幅度、排名变化）
+
+**对比维度示例**：
+- 搜索量变化：桃子水从6月99,300降至12月35,858（-63.9%）
+- 排名变化：婴儿水6月未进TOP10，12月升至第3名（逆势机会）
+- 竞争格局变化：笔记数/搜索量比值的季节性差异
+- 用户行为变化：6月搜"痱子"，12月搜"湿疹"（需求转移）
+
+### 规则2: **反常识洞察框架**（每轮必选1个维度）
+不要做常规的"长尾词机会"分析，必须从以下维度挖掘：
+
+**A. 逆势增长词**：淡季反而上涨的关键词
+- 示例：婴儿水6月未进TOP10，12月第3名（+XXX%）
+
+**B. 降幅异常词**：降幅远超/远低于品类平均的词
+- 示例：为何某词降幅-79.8%，远超主词-63.9%？
+
+**C. 季节性倒挂词**：淡季搜索量占全年比例异常高的词
+- 示例：某词12月占6+12月总量>50%（非季节性需求）
+
+**D. 竞争格局突变词**：笔记数/搜索量比值在6月vs12月剧变
+- 示例：6月红海（比值>1），12月蓝海（比值<0.5）
+
+**E. 用户行为迁移**：搜索词语义在不同季节的变化
+- 示例：6月关注"痱子"，12月关注"安全性"
+
+### 规则3: **战术建议多样化**（禁止连续使用相同类型）
+每轮必须从不同类型中选择：
+- 类型1: 付费流量（搜索广告、信息流）
+- 类型2: KOC合作（测评、种草）
+- 类型3: SEO优化（自然排名、关键词布局）
+- 类型4: 社群运营（母婴社区、私域流量）
+- 类型5: 事件营销（话题挑战、季节性事件）
+- 类型6: 产品迭代（基于用户疑问改进产品）
+- 类型7: 竞品阻击（拦截竞品搜索词）
+- 类型8: 内容矩阵（系列内容、IP打造）
+
+### 规则4: **数据质量约束**
+{"- ⚠️ **市场出价数据全为0**，禁止使用：" if market_price_disabled else ""}
+{"  - ❌ 禁止提及'市场出价'、'CPC'、'竞价'等词" if market_price_disabled else ""}
+{"  - ❌ 禁止计算'广告性价比'（基于出价）" if market_price_disabled else ""}
+{"  - ✅ 改用'广告消耗'作为竞争强度指标" if market_price_disabled else ""}
+{"  - ✅ 使用'广告消耗'计算实际投放效率" if market_price_disabled else ""}
+
+### 规则5: **必须基于真实数据**
+- 所有结论必须从下方提供的实际数据中提取
+- 禁止凭空推测或编造数字
+- 证据必须精确：引用的数字必须与原始数据完全一致
+
+### 规则6: **多维度分析**
+不要只看搜索指数！必须综合分析：
+- 6月vs12月搜索量对比（季节性）
+- 搜索量 vs 笔记数（内容空白度）
+- 搜索量 vs 广告消耗（实际投放效率）
+- 自然点击率 vs 广告点击率（内容质量）
+- 搜索增速（趋势判断）
+
+### 规则7: **竞品对比维度**（至少1轮专门分析）
+必须对比的维度：
+- 桃子水 vs 爽身粉：6月、12月搜索量对比
+- 降幅对比：谁的季节性更强？
+- 用户关注点对比：功效词 vs 安全词
+- 品牌词对比：贝亲桃子水 vs 松达/其他品牌
+- 长尾词分布：谁的长尾词更分散？
 
 ## 输出格式（严格遵守字段名）：
 
-### 示例1：基础季节性分析
+### 示例1：6月vs12月季节性对比（必须包含的对比分析）
 ```json
-{
-  "insight": "桃子水在6月搜索指数为99300，而12月降至35858，下降63.9%。而'婴儿水'搜索指数从6月18211仅降至12月18698（+2.7%），季节性极弱，是淡季流量的蓝海入口。",
+{{
+  "insight": "【季节性逆势发现】'婴儿水'在6月搜索量XX（排名XX），12月升至18,698（排名第3），逆势上涨+XX%，而竞品'桃子水'同期下跌63.9%。'婴儿水'的非季节性特征使其成为淡季布局的战略入口。",
   "evidence": [
-    {"date": "6月", "keyword": "桃子水", "search_index": 99300, "original_row_index": 3},
-    {"date": "12月", "keyword": "桃子水", "search_index": 35858, "original_row_index": 0}
+    {{"date": "6月", "keyword": "桃子水", "search_index": 99300, "original_row_index": 3}},
+    {{"date": "12月", "keyword": "桃子水", "search_index": 35858, "original_row_index": 0}},
+    {{"date": "12月", "keyword": "婴儿水", "search_index": 18698, "original_row_index": 2}}
   ],
   "tactical_recommendations": [
-    "【P0-立即执行】在小红书搜索'婴儿水'时投放松达广告（搜索量18698/月，市场出价参考0.5元，预估预算3000-5000元/月，目标ROI>3）",
-    "【P1-本周内】联系@小红书母婴KOL（粉丝10-50万）创作'婴儿水vs松子粉'对比测评（预算单条2000-5000元，目标曝光10万+，点击率>8%）",
-    "【P2-本月内】布局长尾词'婴儿爽身粉推荐新生儿'（搜索量3852，市场出价仅0.3元，性价比极高，测试预算1000元，目标ROI>5）"
+    "【P0-立即执行】针对'婴儿水'关键词布局搜索广告（广告消耗参考XX元，日预算500元，7天测试，目标ROI>4）",
+    "【P1-本周内】创建'婴儿水vs松子粉'对比内容矩阵（社群运营策略：在母婴社区发布专业测评，预算3000元）",
+    "【P2-本月内】基于逆势增长特征，布局'非季节性场景'内容（SEO优化：如湿疹、日常护理等关键词）"
   ],
-  "next_prompt": "深度挖掘：分析12月数据中哪些关键词的'内容空白度'最高（搜索量高但自然笔记数少）？这些真正的蓝海词为何未被发掘？"
-}
+  "next_prompt": "深度对比：分析6月TOP10关键词在12月的排名变化，哪些词'掉出TOP10'？哪些词'新进TOP10'？这些变化反映了什么用户需求迁移？"
+}}
 ```
 
-### 示例2：多维度深度分析（推荐）
+### 示例2：竞品对比分析（深度对比桃子水vs爽身粉）
 ```json
-{
-  "insight": "【反常识发现】'婴儿爽身粉推荐新生儿'搜索指数3852，但自然笔记数仅120条，内容空白度高达32.1（搜索/笔记比），且市场出价仅0.3元，广告性价比是'桃子水'（1.2元）的4倍。这是被低估的黄金长尾词。",
+{{
+  "insight": "【竞品季节性对比】桃子水6月搜索99,300降至12月35,858（-63.9%），爽身粉6月85,725降至12月21,949（-74.4%）。爽身粉的季节性更强，说明其'痱子预防'场景主导需求。松达应在淡季布局'非痱子场景'（如湿疹、日常护理）来抗跌。",
   "evidence": [
-    {"date": "12月", "keyword": "婴儿爽身粉推荐新生儿", "search_index": 3852, "natural_notes": 120, "ad_cpc": 0.3, "original_row_index": 16},
-    {"date": "12月", "keyword": "桃子水", "search_index": 35858, "natural_notes": 29000, "ad_cpc": 1.2, "original_row_index": 0}
+    {{"date": "6月", "keyword": "桃子水", "search_index": 99300, "original_row_index": 3}},
+    {{"date": "12月", "keyword": "桃子水", "search_index": 35858, "original_row_index": 0}},
+    {{"date": "6月", "keyword": "爽身粉", "search_index": 85725, "original_row_index": 4}},
+    {{"date": "12月", "keyword": "爽身粉", "search_index": 21949, "original_row_index": 1}}
   ],
   "tactical_recommendations": [
-    "【P0-今日启动】立即在'婴儿爽身粉推荐新生儿'词下投放搜索广告（出价0.4元，日预算200元，7天测试期，目标CPC<0.5元，ROI>5）",
-    "【P1-本周内】紧急联系3-5个腰部母婴博主（粉丝5-15万），发布'新生儿爽身粉真人测评'笔记，填补内容空白（单条预算1000-2000元，目标自然流量占比>60%）",
-    "【P2-本月内】基于此词衍生'新生儿护肤品推荐'、'新生儿日用品清单'等关联内容矩阵，形成话题垄断"
+    "【P0-今日启动】立即布局'湿疹'、'日常护理'等非季节性场景词（产品迭代策略：强调松达的全年适用性）",
+    "【P1-本周内】发起#冬季也要用爽身粉 话题挑战（事件营销策略：联合10位KOL，预算8000元，目标曝光100万+）",
+    "【P2-本月内】创建'四季护肤'内容矩阵（内容矩阵策略：春夏秋冬4季场景内容，打破季节性认知）"
   ],
-  "next_prompt": "深度挖掘：分析12月数据中搜索增速为正（逆势增长）的关键词有哪些？它们的自然点击率和广告点击率如何？背后反映了什么用户需求趋势？"
-}
+  "next_prompt": "深度挖掘：对比6月和12月的'用户关注点'变化（如功效词vs安全词的比例），用户在淡季更关心什么？"
+}}
 ```
 
+### 示例3：反常识洞察（降幅异常词）
+```json
+{{
+  "insight": "【降幅异常发现】'桃子水的正确使用方法'6月搜索58,310降至12月11,771（-79.8%），降幅远超主词'桃子水'（-63.9%）。这说明用户在淡季对'使用方法'的关注度断崖下跌，而松达可抢占'冬季使用场景'认知空白。",
+  "evidence": [
+    {{"date": "6月", "keyword": "桃子水正确使用方法", "search_index": 58310, "original_row_index": 7}},
+    {{"date": "12月", "keyword": "桃子水的正确使用方法", "search_index": 11771, "original_row_index": 6}},
+    {{"date": "6月", "keyword": "桃子水", "search_index": 99300, "original_row_index": 3}},
+    {{"date": "12月", "keyword": "桃子水", "search_index": 35858, "original_row_index": 0}}
+  ],
+  "tactical_recommendations": [
+    "【P0-立即执行】抢占'冬季爽身粉使用方法'搜索词（竞品阻击策略：在桃子水用户搜索时拦截，预算2000元/周）",
+    "【P1-本周内】创作《冬天宝宝也要用爽身粉？正确使用方法》爆款内容（KOC合作：5位母婴博主，单条1500元）",
+    "【P2-本月内】建立'四季使用指南'SEO矩阵（SEO优化：布局春夏秋冬4季使用方法词）"
+  ],
+  "next_prompt": "深度挖掘：分析12月数据中哪些词的'内容空白度'（搜索量/笔记数）最高？这些供需失衡的词是松达的内容机会。"
+}}
 ```
 
-## 📊 多维度分析指南（如何发现深度洞察）：
+## 📊 多维度分析指南：
 
-### 1. 内容空白机会分析
+### 1. 内容空白度分析
 - **计算方法**：内容空白度 = 搜索次数指数 / (自然笔记数 + 1)
-- **黄金阈值**：空白度 > 5 为蓝海机会
-- **分析案例**：如果'婴儿水'搜索18698，但自然笔记只有2000条，空白度=9.3，说明供需失衡，内容机会巨大
+- **黄金阈值**：空白度 > 0.5 为蓝海机会（注意：笔记数常为"9000-10000"范围，已自动取中值）
+- **案例**：如果'婴儿水'搜索18698，笔记9500，空白度=1.97（蓝海）
 
-### 2. 广告性价比分析
-- **计算方法**：性价比 = 搜索次数指数 / 市场出价（元）
-- **优质标准**：性价比 > 10000 为高性价比词
-- **分析案例**：如果'新生儿爽身粉'搜索3852，市场出价0.3元，性价比=12840，远超'桃子水'（35858/1.2=29881），更值得投放
+### 2. 广告效率分析
+- **计算方法**：效率 = 搜索次数指数 / (广告消耗 + 1)
+- **优质标准**：效率 > 100 为高效率词
+- **案例**：搜索3852，广告消耗仅10元，效率=385（极高性价比）
 
-### 3. 趋势机会分析
-- **关键指标**：搜索增速（正值=上涨，负值=下跌）
-- **逆势机会**：12月整体下跌时，增速为正的词是逆势增长机会
-- **分析案例**：如果大盘增速-5%，某词增速+8%，说明该词正在崛起
-
-### 4. 内容质量分析
-- **关键指标**：自然点击率 vs 广告点击率
-- **优质内容**：自然点击率 > 20% 说明内容吸引力强
-- **广告效率**：广告点击率 > 15% 说明广告素材优秀
-
-### 5. 竞争强度分析
-- **计算方法**：竞争强度 = 自然笔记数 / 搜索次数指数
-- **红海/蓝海**：竞争强度 > 1 为红海（笔记多搜索少），< 0.5 为蓝海
-- **分析案例**：'桃子水'竞争强度=29000/35858=0.81（激烈），'婴儿水'=2000/18698=0.11（蓝海）
+### 3. 季节性强度分析
+- **计算方法**：季节性强度 = |6月搜索量 - 12月搜索量| / 6月搜索量
+- **强/弱季节性**：> 70% 为强季节性，< 30% 为弱季节性
+- **案例**：痱子（-90.3%）强季节性，婴儿水（+2.7%）弱季节性
 
 ## ⚠️ 关键要求（必须严格遵守）：
-- **evidence 字段必须包含**: date, keyword, search_index, original_row_index（必须字段）
-- **evidence 可选字段**：natural_notes（自然笔记数）, ad_cpc（市场出价）, search_growth（搜索增速）, content_gap（内容空白度）等
-- **keyword 必须从下方数据的'搜索词'列中精确复制**，不能修改或简化
-- **search_index 必须从下方数据的'搜索次数指数'列中精确复制**，不能四舍五入或估算
-- **original_row_index 是数据在表格中的行号**（从0开始，看数据示例左侧的序号）
-- **date 必须是'6月'或'12月'**，对应数据来源
-- **tactical_recommendations 格式**：【优先级-时间要求】具体行动（关键数据，预算估算，目标指标）
-- **next_prompt 必须深入且具有战略性**：聚焦多维度分析，如"哪些词内容空白度最高"、"哪些词性价比最优"、"哪些词逆势增长"
-- **每个结论都要有2-4个证据支撑**，形成完整的数据链条
-- **禁止编造数据**：如果数据中没有某个关键词或指标，绝对不能虚构
+- **evidence 必须字段**: date, keyword, search_index, original_row_index
+- **evidence 可选字段**: natural_notes, ad_cost（广告消耗）, search_growth, content_gap
+- **keyword 必须从数据的'搜索词'列精确复制**
+- **search_index 必须精确复制**，不能四舍五入
+- **date 必须是'6月'或'12月'**
+- **tactical_recommendations 格式**: 【优先级-时间】具体行动（策略类型：XXX，预算，目标）
+- **next_prompt 必须引导下一轮深度对比**：如"对比6月vs12月的..."
+- **每个结论必须有2-4个证据**，且必须包含6月和12月的对比数据
+- **禁止编造数据**：如果数据中没有，绝对不能虚构
 """
+        
+        # 构建用户消息，包含错误反馈
         
         # 构建用户消息，包含错误反馈
         # 仅传递审计通过的洞察给LLM，避免错误信息污染
@@ -1201,8 +1318,8 @@ def main():
     print("\n📊 加载数据...")
     data_dict = system.load_data(
         file_paths=[
-            "搜索词-2025-6月.xlsx",
-            "搜索词-2025-12月.xlsx"
+            "data/搜索词-2025-6月.xlsx",
+            "data/搜索词-2025-12月.xlsx"
         ],
         labels=["6月", "12月"]
     )
@@ -1243,13 +1360,13 @@ def main():
         print(json.dumps(result, ensure_ascii=False, indent=2))
         
         # 保存 JSON
-        with open("insight_result_round1.json", "w", encoding="utf-8") as f:
+        with open("output/insight_result_round1.json", "w", encoding="utf-8") as f:
             json.dump(result, f, ensure_ascii=False, indent=2)
-        print("\n✅ JSON 结果已保存至: insight_result_round1.json")
+        print("\n✅ JSON 结果已保存至: output/insight_result_round1.json")
         
         # 保存 Markdown
         markdown_report = system.generate_markdown_report(result, round_num=1)
-        with open("insight_result_round1.md", "w", encoding="utf-8") as f:
+        with open("output/insight_result_round1.md", "w", encoding="utf-8") as f:
             f.write(markdown_report)
         print("✅ Markdown 报告已保存至: insight_result_round1.md")
     
@@ -1270,21 +1387,21 @@ def main():
             "final_insight_summary": system.insight_history
         }
         
-        with open("insight_full_cycle.json", "w", encoding="utf-8") as f:
+        with open("output/insight_full_cycle.json", "w", encoding="utf-8") as f:
             json.dump(output, f, ensure_ascii=False, indent=2)
-        print("\n✅ JSON 结果已保存至: insight_full_cycle.json")
+        print("\n✅ JSON 结果已保存至: output/insight_full_cycle.json")
         
         # 保存 Markdown 报告（完整版，包含所有轮次）
         markdown_report = system.generate_full_markdown_report(all_results, user_initial_prompt)
-        with open("insight_full_cycle.md", "w", encoding="utf-8") as f:
+        with open("output/insight_full_cycle.md", "w", encoding="utf-8") as f:
             f.write(markdown_report)
-        print("✅ 完整报告已保存至: insight_full_cycle.md")
+        print("✅ 完整报告已保存至: output/insight_full_cycle.md")
         
         # 🎯 生成高质量执行摘要报告（仅包含审计通过的核心洞察）
         executive_report = system.generate_executive_report(all_results, user_initial_prompt)
-        with open("EXECUTIVE_SUMMARY.md", "w", encoding="utf-8") as f:
+        with open("output/EXECUTIVE_SUMMARY.md", "w", encoding="utf-8") as f:
             f.write(executive_report)
-        print("✅ 🎯 执行摘要报告已保存至: EXECUTIVE_SUMMARY.md")
+        print("✅ 🎯 执行摘要报告已保存至: output/EXECUTIVE_SUMMARY.md")
         print("   （这是给决策者看的精简版，仅包含高质量洞察和行动计划）")
         
         # 输出关键发现
