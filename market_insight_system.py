@@ -44,7 +44,7 @@ class MarketInsightSystem:
         
         # 系统状态 (Context Buffer)
         self.iteration_count = 0
-        self.max_iterations = 5
+        self.max_iterations = 10  # 从5次提升到10次，深度挖掘
         self.insight_history = []  # 所有洞察历史（含审计失败项，用于完整报告和调试）
         self.insight_embeddings = []  # 向量存储（仅审计通过的洞察）
         self.evidence_pool = []  # 证据池
@@ -164,7 +164,7 @@ class MarketInsightSystem:
     
     def _get_embedding(self, text: str) -> np.ndarray:
         """
-        获取文本的向量表示 (Embedding)
+        获取文本的向量表示 (Embedding) - 使用Qwen模型
         Args:
             text: 输入文本
         Returns:
@@ -172,7 +172,7 @@ class MarketInsightSystem:
         """
         try:
             response = self.client.embeddings.create(
-                model="text-embedding-3-small",
+                model="text-embedding-v2",  # 使用Qwen的embedding模型
                 input=text
             )
             return np.array(response.data[0].embedding)
