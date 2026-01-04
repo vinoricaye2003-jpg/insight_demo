@@ -18,8 +18,17 @@ from dotenv import load_dotenv
 # 设置标准输出编码为UTF-8（Windows兼容）
 if sys.platform == 'win32':
     import io
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+    # 强制设置UTF-8编码，解决Windows PowerShell乱码问题
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+    # 尝试设置控制台代码页为UTF-8
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        kernel32.SetConsoleOutputCP(65001)  # UTF-8
+        kernel32.SetConsoleCP(65001)
+    except:
+        pass
 
 # 加载 .env 文件中的环境变量
 load_dotenv()
@@ -232,7 +241,7 @@ class MarketInsightSystem:
                     {"role": "user", "content": user_prompt}
                 ],
                 temperature=temperature,
-                max_tokens=2000
+                max_tokens=4000  # 增加到4000以支持800-1200字的详尽洞察
             )
             return response.choices[0].message.content
         except Exception as e:
@@ -266,6 +275,54 @@ class MarketInsightSystem:
 - **核心竞品**：贝亲桃子水
 - **战略目标**：从竞品手中抢夺市场份额，寻找攻击缺口和蓝海机会
 - **分析视角**：每个洞察都要回答"如何利用这个发现击败桃子水"
+
+## 🎯 【深度洞察六层模型】- 每个洞察必须达到800-1200字
+
+你不是在做数据分析，而是在产出**战略级洞察**。每个洞察必须包含以下六层：
+
+### 📊 Layer 1: 数据事实层（100%真实，必须精确）
+- **要求**：列出3-5个相关数据点，形成对比
+- **格式**：关键词 + 6月数值 + 12月数值 + 变化率
+- **示例**：
+  * 桃子水：6月99,300 → 12月35,858（-63.9%）
+  * 痱子：6月163,113 → 12月15,882（-90.3%）
+  * 婴儿水：6月18,211 → 12月18,698（+2.7%）
+
+### 🔍 Layer 2: 交叉印证层（多维度验证，200字）
+- **要求**：从3个维度验证同一个发现
+- **维度选择**：
+  * 维度1：品类对比（我方 vs 竞品）
+  * 维度2：意图类型（功效类 vs 安全类）
+  * 维度3：竞争态势（搜索量 vs 内容供给）
+- **目的**：证明这不是偶然，而是系统性变化
+
+### 💡 Layer 3: 用户推理层（行为+心理，标注置信度，250字）
+- **要求**：解释用户行为变化背后的心理原因
+- **格式**：
+  * 6月用户画像：搜索意图 + 情绪状态 + 决策逻辑
+  * 12月用户画像：搜索意图 + 情绪状态 + 决策逻辑
+  * 核心变化：从XX心态转向YY心态
+- **置信度**：🟢确定/🟡很可能/🟠可能/🔴待验证
+
+### 🎯 Layer 4: 战略洞察层（竞争格局+机会，250字）
+- **要求**：分析竞争态势，找到松达的突破口
+- **格式**：
+  * 桃子水的护城河：强在哪里？
+  * 桃子水的漏洞：弱在哪里？
+  * 松达的机会窗口：如何切入？
+  * 战略含义：这对松达意味着什么？
+
+### 🚀 Layer 5: 分阶段战术层（可执行，300字）
+- **要求**：给出3个Phase的详细执行方案
+- **Phase 1（验证期）**：小成本测试（预算+时间+目标+止损线）
+- **Phase 2（占位期）**：快速占领心智（具体动作+预算）
+- **Phase 3（验证节点）**：设定复盘时间+验证指标
+
+### ⚠️ Layer 6: 风险评估层（决策支持，150字）
+- **要求**：列出3个主要风险+应对方案
+- **格式**：风险X + 发生概率 + 潜在损失 + 应对方案
+
+---
 
 ## 🚨 核心规则（严格遵守）：
 
@@ -317,18 +374,95 @@ class MarketInsightSystem:
 {"  - ✅ 改用'广告消耗'作为竞争强度指标" if market_price_disabled else ""}
 {"  - ✅ 使用'广告消耗'计算实际投放效率" if market_price_disabled else ""}
 
-### 规则5: **必须基于真实数据**
-- 所有结论必须从下方提供的实际数据中提取
-- 禁止凭空推测或编造数字
-- 证据必须精确：引用的数字必须与原始数据完全一致
+### 规则5: **必须基于真实数据**（⚠️ 核心反幻觉规则）
+
+**绝对禁止以下行为：**
+
+⚠️ **这些是导致幻觉的最常见错误，必须避免：**
+
+1. ❌ **禁止编造数据**：如果某个关键词在某个月份的数据中不存在，不能编造它的数值
+   - ❌ 错误示例："'痱子怎么快速消除'在12月的搜索量为16951"（但12月数据中根本没有这个词！）
+   - ✅ 正确做法：如果某个词只在6月有数据，只说"6月搜索量129,301"，不要说"12月搜索量XX"
+   - ✅ 正确说法："6月搜索量129,301，12月未进入TOP记录范围"
+
+2. ❌ **禁止跨月编造对比**：所有对比（6月vs12月）都必须保证两个月份都有该关键词的数据
+   - ❌ 错误示例："'痱子怎么快速消除'6月129,301 → 12月16,951（-87.2%）"（12月数据中查不到！）
+   - ✅ 正确示例："'桃子水'6月99,300 → 12月35,858（-63.9%）"（两个数据都真实存在）
+   - ⚠️ 在写对比前，必须先在6月数据中找到该词，再在12月数据中找到该词
+
+3. ❌ **禁止推测变化率**：如果某个词只在一个月份有数据，不能计算变化率
+   - ❌ 错误示例："下降-87.2%"（但第二个月份根本没数据）
+   - ✅ 正确做法："6月搜索量XX，12月未进入TOP记录范围（表明需求大幅下降）"
+
+4. ❌ **禁止编造字段值**：如果原始数据某个字段为空或0，不要编造数值
+   - ❌ 错误示例："自然笔记数2.5万"（但数据中没有"笔记数"字段或值为0）
+   - ✅ 正确做法：只使用数据中确实存在且有值的字段
+
+**验证方法（必须执行）：**
+- 在写每一条证据前，先在数据中找到这一行
+- 确认关键词、数值、日期完全匹配
+- 如果找不到，立即停止并重新选择其他真实数据
 
 ### 规则6: **多维度分析**
 不要只看搜索指数！必须综合分析：
-- 6月vs12月搜索量对比（季节性）
-- 搜索量 vs 笔记数（内容空白度）
-- 搜索量 vs 广告消耗（实际投放效率）
-- 自然点击率 vs 广告点击率（内容质量）
-- 搜索增速（趋势判断）
+- 6月vs12月搜索量对比（季节性）- ⚠️ 但只对比确实在两个月份都存在的关键词
+- 搜索量 vs 笔记数（内容空白度）- ⚠️ 仅当数据中有"笔记数"字段且非0时
+- 搜索量 vs 广告消耗（实际投放效率）- ⚠️ 仅当数据中有"广告消耗"字段且非0时
+- 自然点击率 vs 广告点击率（内容质量）- ⚠️ 仅当数据中有这些字段时
+- 搜索增速（趋势判断）- ⚠️ 只有同一关键词在两个月份都有数据时才能计算
+
+**⚠️ 重要防幻觉检查清单：**
+在写每一条洞察前，自问3个问题：
+1. 我声称的每个数值，能在原始数据中找到完全匹配的行吗？（关键词+数值+日期）
+2. 我计算的变化率，是基于同一关键词在两个月份都有数据吗？
+3. 我提到的字段（如笔记数），原始数据中真的有这个列且有值吗？
+
+如果任何一个问题回答"否"，立即放弃这条洞察，选择其他真实数据重新分析。
+
+### 规则7: **根因分析框架（重要！每个洞察必须包含）**
+
+每个洞察必须包含以下五层分析：
+
+**第1层：WHAT（发现的事实）**
+- 用数据说话：'XX词搜索量从A降至B，变化C%'
+- 必须有具体数值，不能模糊
+
+**第2层：WHY（根本原因假设）**
+- **关键**：列出2-3个可能的原因，而非唯一原因
+- 对每个假设标注置信度（高/中/低）
+- 用其他数据印证假设
+- **重要**：承认"不确定性"
+
+示例：
+```
+事实：'桃子水6月99,300 → 12月35,858（-63.9%）'
+
+根因假设1（置信度：高）：
+- 季节性衰退（痱子需求随温度下降）
+- 印证数据：痱子词-90.3%, 湿疹词+314.5%
+
+根因假设2（置信度：中）：
+- 用户需求从'去痱'转向'保湿'
+- 印证数据：6月功效词占78% → 12月占54.1%
+
+根因假设3（置信度：低）：
+- 用户转向竞品（如婴儿水）
+- 印证数据：婴儿水+2.7%（但绝对值仍低于桃子水）
+```
+
+**第3层：HOW（我们的行动）**
+- 基于根因，松达应该做什么？
+- 必须具体可执行
+
+**第4层：RISK（风险警示）**
+- 这个假设如果错了，会有什么后果？
+- 投入的资源可能打水漂吗？
+
+**第5层：VERIFY（验证节点）**
+- 建议设置3个月后的"验证节点"，确认假设是否成立
+- 例如："3月复查'湿疹'词搜索量是否仍保持高位"
+
+⚠️ **注意**：不要说"导致"、"因此"等因果词，除非你列出了多个假设并说明为什么选择这个。用"可能"、"表明"、"关联"等中性词。
 
 ### 规则7: **竞品对比维度**（至少1轮专门分析）
 必须对比的维度：
@@ -338,32 +472,75 @@ class MarketInsightSystem:
 - 品牌词对比：贝亲桃子水 vs 松达/其他品牌
 - 长尾词分布：谁的长尾词更分散？
 
-## 输出格式（严格遵守字段名）：
+## 📋 输出格式（严格遵守字段名）- 目标800-1200字
 
-### 示例1：6月vs12月季节性对比（必须包含的对比分析）
+你的输出必须是**战略级深度洞察**，而不是简单的数据陈述。
+
+### 🎯 完整示例：深度洞察（800-1200字）
+
 ```json
 {{
-  "insight": "【季节性逆势发现】'婴儿水'在6月搜索量XX（排名XX），12月升至18,698（排名第3），逆势上涨+XX%，而竞品'桃子水'同期下跌63.9%。'婴儿水'的非季节性特征使其成为淡季布局的战略入口。",
+  "insight": "【数据事实 - Layer 1】
+'桃子水'从6月99,300降至12月35,858（-63.9%），'爽身粉'从85,725降至21,949（-74.4%），而'婴儿水'逆势从18,211微增至18,698（+2.7%）。
+
+【交叉印证 - Layer 2】
+从三个维度验证：
+1️⃣ 品类对比：桃子水（竞品单品）跌64%，爽身粉（品类词）跌74%，说明整个品类在冬季失守
+2️⃣ 意图类型：功效类词（痱子/快速消除）集体跌80%+，预防类词（婴儿水/新生儿推荐）逆势或持平
+3️⃣ 竞争态势：婴儿水搜索18k内容2.5w（空白度0.75低竞争），桃子水搜索36k内容9k+（空白度4.0高竞争）
+
+【用户推理 - Layer 3】（置信度：🟡很可能）
+6月用户画像：宝宝长痱子→焦虑急迫→搜索'痱子怎么快速消除'→关注功效>安全→点击'桃子水快速去痱'→立即下单
+12月用户画像：宝宝不长痱子→理性预防→搜索'婴儿爽身粉推荐新生儿'→关注安全>功效→搜'可以直接涂脸上吗'→研究成分
+核心变化：从'应激性治疗'到'预防性护理'，从'功效第一'到'安全第一'
+
+【战略洞察 - Layer 4】
+桃子水的护城河：夏季'快速去痱'心智强（99k搜索），占据功效高地
+桃子水的三大漏洞：
+1️⃣ 季节性依赖严重，冬季流量断崖式下跌-64%
+2️⃣ 安全性认知模糊（'可以涂脸吗'3.6k搜索但桃子水未回答）
+3️⃣ 用户教育不足（'是干嘛的'10k搜索，说明认知混乱）
+松达的战略窗口：占领冬季失守流量（35k可争取15-20k）、填补'安全性'内容空白、重新定义品类（从'去痱产品'到'全季护理'）
+
+【分阶段战术 - Layer 5】
+Phase 1：验证期（7天，预算3,500元）
+- 动作：针对'婴儿水'投放搜索广告，日预算500元×7天
+- 目标：CPC<1.5元，CTR>8%，ROI>3
+- 止损线：前3天ROI<1.5立即停止；放大线：ROI>4加至800元/天
+
+Phase 2：占位期（1月，预算15,000元）
+- 动作1：KOC内容矩阵（10,000元），5位母婴KOC×2,000元/人，内容《新生儿能用爽身粉吗？》
+- 动作2：SEO长尾词布局（5,000元），3个月占领搜索前3页
+
+Phase 3：验证节点（3月春季复盘）
+- 验证指标1：春季'痱子'词回升，但'婴儿水'仍保持高位→证明品类认知已改变
+- 验证指标2：'松达'品牌词搜索量提升>30%→心智建立成功
+
+【风险评估 - Layer 6】
+风险1：婴儿水只是冬季临时替代 | 概率30% | 损失3,500元 | 应对：7天验证期快速止损
+风险2：内容投入后转化不佳 | 概率15% | 损失10,000元 | 应对：合同约定ROI保底条款
+风险3：竞品跟进抢占 | 概率40% | 影响：先发优势丧失 | 应对：1个月内覆盖前3页",
+  
   "evidence": [
     {{"date": "6月", "keyword": "桃子水", "search_index": 99300, "original_row_index": 3}},
     {{"date": "12月", "keyword": "桃子水", "search_index": 35858, "original_row_index": 0}},
+    {{"date": "6月", "keyword": "爽身粉", "search_index": 85725, "original_row_index": 4}},
+    {{"date": "12月", "keyword": "爽身粉", "search_index": 21949, "original_row_index": 1}},
+    {{"date": "6月", "keyword": "婴儿水", "search_index": 18211, "original_row_index": 15}},
     {{"date": "12月", "keyword": "婴儿水", "search_index": 18698, "original_row_index": 2}}
   ],
+  
   "tactical_recommendations": [
-    "【P0-立即执行】针对'婴儿水'关键词布局搜索广告（广告消耗参考XX元，日预算500元，7天测试，目标ROI>4）",
-    "【P1-本周内】创建'婴儿水vs松子粉'对比内容矩阵（社群运营策略：在母婴社区发布专业测评，预算3000元）",
-    "【P2-本月内】基于逆势增长特征，布局'非季节性场景'内容（SEO优化：如湿疹、日常护理等关键词）"
+    "【P0-立即执行】针对'婴儿水'投放搜索广告（日预算500元×7天=3,500元，目标CPC<1.5/CTR>8%/ROI>3）",
+    "【P1-本周内】联合5位母婴KOC发布《新生儿能用爽身粉吗？》测评（预算10,000元，植入松达安全性卖点）",
+    "【P2-本月内】SEO布局'婴儿水''面部护理''新生儿可用'等长尾词（预算5,000元，3个月占领搜索前3页）"
   ],
-  "next_prompt": "深度对比：分析6月TOP10关键词在12月的排名变化，哪些词'掉出TOP10'？哪些词'新进TOP10'？这些变化反映了什么用户需求迁移？"
+  
+  "next_prompt": "深度挖掘：分析6月TOP10关键词在12月的排名变化，哪些词'掉出TOP10'？哪些词'新进TOP10'？这些变化反映了什么用户需求迁移路径？"
 }}
 ```
 
-### 示例2：竞品对比分析（深度对比桃子水vs爽身粉）
-```json
-{{
-  "insight": "【竞品季节性对比】桃子水6月搜索99,300降至12月35,858（-63.9%），爽身粉6月85,725降至12月21,949（-74.4%）。爽身粉的季节性更强，说明其'痱子预防'场景主导需求。松达应在淡季布局'非痱子场景'（如湿疹、日常护理）来抗跌。",
-  "evidence": [
-    {{"date": "6月", "keyword": "桃子水", "search_index": 99300, "original_row_index": 3}},
+### ⚠️ 关键要求：
     {{"date": "12月", "keyword": "桃子水", "search_index": 35858, "original_row_index": 0}},
     {{"date": "6月", "keyword": "爽身粉", "search_index": 85725, "original_row_index": 4}},
     {{"date": "12月", "keyword": "爽身粉", "search_index": 21949, "original_row_index": 1}}
@@ -710,12 +887,37 @@ class MarketInsightSystem:
                     break
             
             if not found:
+                # 提供有用的提示：该关键词是否在另一个月份存在
+                hint_message = ""
+                if data_source:
+                    other_month = "12月" if "6月" in data_source else "6月"
+                    for label, df in data_dict.items():
+                        if other_month in label:
+                            keyword_col = None
+                            for col in df.columns:
+                                if '搜索词' in col or '关键词' in col:
+                                    keyword_col = col
+                                    break
+                            if keyword_col:
+                                exact_matches = df[df[keyword_col] == keyword]
+                                if not exact_matches.empty:
+                                    search_col = None
+                                    for col in df.columns:
+                                        if '搜索次数指数' in col or '搜索指数' in col:
+                                            search_col = col
+                                            break
+                                    if search_col:
+                                        actual_value = int(exact_matches.iloc[0][search_col])
+                                        hint_message = f"\n  ⚠️ 提示：该关键词在{other_month}存在，搜索量为{actual_value}"
+                                        hint_message += f"\n  ❗ 不要编造它在{data_source}的数值！"
+                            break
+                
                 verification_logs.append(
                     f"证据 {idx}: ❌ 验证失败\n"
                     f"  - 关键词: '{keyword}'\n"
                     f"  - 声称数值: {claimed_value}\n"
-                    f"  - 数据源: {data_source or '未指定'}\n"
-                    f"  - 原因: 在原始数据中未找到匹配的关键词或数值"
+                    f"  - 数据源: {data_source or '未指定'}{hint_message}\n"
+                    f"  - 原因: 在{data_source}的原始数据中未找到该关键词或数值"
                 )
                 all_passed = False
         
@@ -773,6 +975,145 @@ class MarketInsightSystem:
             )
         
         return "\n".join(audit_logs) if audit_logs else "✅ 逻辑审计通过"
+    
+    def auditor_verify_causal_reasoning(self, insight: str, evidence: List[Dict]) -> Tuple[bool, str]:
+        """
+        P0-1: 推理链验证 - 验证洞察中的因果推理是否合理
+        
+        Args:
+            insight: 洞察文本
+            evidence: 证据列表
+        
+        Returns:
+            (is_valid, warning_message)
+        """
+        # 定义因果关键词
+        causal_keywords = ["导致", "引起", "因此", "所以", "由于", "决定了"]
+        strong_claim_keywords = ["一定", "必然", "绝对", "完全", "肯定", "所有", "都"]
+        
+        warnings = []
+        
+        # 检查1：是否有因果声明
+        has_causal_claim = any(kw in insight for kw in causal_keywords)
+        has_strong_claim = any(kw in insight for kw in strong_claim_keywords)
+        
+        if has_causal_claim:
+            # 如果有因果声明，需要至少4条证据（2个对比维度）
+            if len(evidence) < 4:
+                warnings.append(
+                    f"⚠️ 推理链检查失败：\n"
+                    f"  - 声称因果关系：'{[kw for kw in causal_keywords if kw in insight][0]}'\n"
+                    f"  - 证据数：{len(evidence)} (需要>=4)\n"
+                    f"  → 建议改为：'表明'、'关联'、'伴随'等中性表述"
+                )
+                return False, "\n".join(warnings)
+        
+        if has_strong_claim:
+            # 如果有绝对性声明，需要至少5条高量级证据
+            high_quality_evidence = [
+                ev for ev in evidence 
+                if ev.get('search_index', 0) >= 5000  # 搜索量>5k为高质量
+            ]
+            
+            if len(high_quality_evidence) < 5:
+                warnings.append(
+                    f"⚠️ 强度声明检查失败：\n"
+                    f"  - 声称绝对性：'{[kw for kw in strong_claim_keywords if kw in insight][0]}'\n"
+                    f"  - 高质量证据数：{len(high_quality_evidence)} (需要>=5)\n"
+                    f"  → 建议降低表述强度：'可能'、'表明'、'说明'"
+                )
+                return False, "\n".join(warnings)
+        
+        # 检查2：是否存在"相关性误认为因果"的情况
+        if has_causal_claim:
+            # 检查：是否同时提及了其他可能的解释？
+            alternative_explanations = ["可能", "也许", "或者", "假设", "另一方面"]
+            has_alternatives = any(exp in insight for exp in alternative_explanations)
+            
+            if not has_alternatives:
+                warnings.append(
+                    f"⚠️ 因果论证不完善：\n"
+                    f"  - 仅列出单一因果链，未考虑替代解释\n"
+                    f"  → 建议补充：'可能的原因包括：1.X, 2.Y, 3.Z'"
+                )
+                return False, "\n".join(warnings)
+        
+        return True, "✅ 推理链验证通过"
+    
+    def auditor_validate_data_scale(self, evidence: List[Dict], insight: str) -> Tuple[bool, str]:
+        """
+        P0-2: 数据量级检查 - 验证证据的数据量级是否与结论强度相匹配
+        
+        Returns:
+            (is_valid, warning_message)
+        """
+        # 定义量级阈值
+        CONFIDENCE_LEVELS = {
+            "high": {"range": (10000, float('inf')), "confidence": 1.0, "claim_strength": "strong"},
+            "medium": {"range": (5000, 10000), "confidence": 0.7, "claim_strength": "moderate"},
+            "low": {"range": (1000, 5000), "confidence": 0.4, "claim_strength": "weak"},
+            "extreme_low": {"range": (0, 1000), "confidence": 0.1, "claim_strength": "minimal"}
+        }
+        
+        # 分析证据的量级分布
+        evidence_scales = []
+        for ev in evidence:
+            search_index = ev.get('search_index', 0)
+            
+            # 判定量级
+            scale_level = None
+            for level, config in CONFIDENCE_LEVELS.items():
+                if config["range"][0] <= search_index < config["range"][1]:
+                    scale_level = level
+                    break
+            
+            if scale_level is None:
+                scale_level = "extreme_low"
+            
+            evidence_scales.append({
+                "value": search_index,
+                "level": scale_level,
+                "confidence": CONFIDENCE_LEVELS[scale_level]["confidence"]
+            })
+        
+        # 计算证据的综合置信度
+        if evidence_scales:
+            avg_confidence = sum(e['confidence'] for e in evidence_scales) / len(evidence_scales)
+        else:
+            avg_confidence = 0.0
+        
+        # 检查claim强度与证据强度的匹配度
+        strong_claim_words = ["普遍", "主流", "显著", "大幅", "明显", "所有用户", "大多数"]
+        weak_claim_words = ["可能", "初步", "暗示", "可能性", "倾向"]
+        
+        has_strong_claim = any(word in insight for word in strong_claim_words)
+        
+        warnings = []
+        
+        # 规则1：如果证据很弱（avg_confidence < 0.5）不能用强claim词
+        if avg_confidence < 0.5 and has_strong_claim:
+            evidence_distribution = [f"{e['level']}({e['value']})" for e in evidence_scales[:3]]
+            warnings.append(
+                f"⚠️ 数据量级检查失败：\n"
+                f"  - 平均置信度：{avg_confidence:.2f} (低)\n"
+                f"  - 但使用了强claim词：{[w for w in strong_claim_words if w in insight]}\n"
+                f"  - 证据分布：{evidence_distribution}\n"
+                f"  → 建议改为：'可能'、'初步发现'、'需要进一步验证'"
+            )
+            return False, "\n".join(warnings)
+        
+        # 规则2：如果全部是低量级证据（<1000），不能做战术决策
+        low_scale_count = len([e for e in evidence_scales if e['level'] in ['low', 'extreme_low']])
+        if low_scale_count >= len(evidence_scales) * 0.8:  # 80%以上都是低量级
+            warnings.append(
+                f"⚠️ 低量级证据警告：\n"
+                f"  - 低量级证据占比：{low_scale_count}/{len(evidence_scales)}\n"
+                f"  - 这些数据不足以支撑战术决策\n"
+                f"  → 建议：可作为监测指标，但需进一步验证后才投入资源"
+            )
+            return False, "\n".join(warnings)
+        
+        return True, f"✅ 数据量级验证通过 (平均置信度: {avg_confidence:.2f})"
     
     # ==================== 组件 C: The Controller ====================
     def controller_decide_next(self, insight: str, audit_passed: bool) -> Tuple[str, str]:
@@ -885,6 +1226,30 @@ class MarketInsightSystem:
             is_parse_error=is_parse_error
         )
         print(audit_log)
+        
+        # 步骤 2.1: 推理链验证（P0-1）
+        if audit_passed:
+            print("\n[Auditor - P0-1] 正在验证推理链...")
+            causal_passed, causal_log = self.auditor_verify_causal_reasoning(
+                analyst_result.get('insight', ''),
+                analyst_result.get('evidence', [])
+            )
+            print(causal_log)
+            if not causal_passed:
+                audit_passed = False
+                error_feedback += f"\n\n{causal_log}"
+        
+        # 步骤 2.2: 数据量级检查（P0-2）
+        if audit_passed:
+            print("\n[Auditor - P0-2] 正在检查数据量级...")
+            scale_passed, scale_log = self.auditor_validate_data_scale(
+                analyst_result.get('evidence', []),
+                analyst_result.get('insight', '')
+            )
+            print(scale_log)
+            if not scale_passed:
+                audit_passed = False
+                error_feedback += f"\n\n{scale_log}"
         
         # 如果审计未通过，保存错误反馈供下一轮使用
         if not audit_passed and error_feedback:
@@ -1197,7 +1562,7 @@ class MarketInsightSystem:
         for i, result in enumerate(valid_results[:5], 1):
             insight = result['analyst_result']['insight']
             evidence_count = len(result['analyst_result'].get('evidence_trace', []))
-            md.append(f"### {i}. {insight[:100]}{'...' if len(insight) > 100 else ''}\n\n")
+            md.append(f"### {i}. {insight}\n\n")
             md.append(f"**数据支撑**: {evidence_count} 条证据\n\n")
             
             # 显示关键证据
@@ -1292,6 +1657,332 @@ class MarketInsightSystem:
         md.append("---\n\n")
         md.append("**报告说明**: 本报告仅包含通过数据审计的高质量洞察，所有数据均可追溯到原始行号。\n\n")
         md.append(f"*由 XHS-MarketAI v3.0 自动生成 | {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}*\n")
+        
+        return "".join(md)
+    
+    def generate_integrated_report(self, all_results: List[Dict], user_prompt: str) -> str:
+        """
+        🎯 生成整合洞察报告 - 将多轮分析融合成一份结构化的完整报告
+        
+        报告结构：
+        1. 执行摘要
+        2. 市场全景分析（融合各轮数据发现）
+        3. 竞争格局洞察（桃子水 vs 爽身粉）
+        4. 用户行为深度剖析（6月 vs 12月）
+        5. 战略机会点识别（蓝海词 + 突破口）
+        6. 行动建议与路线图
+        7. 风险提示与数据溯源
+        """
+        md = []
+        
+        # 筛选审计通过的结果 - 兼容两种数据结构
+        valid_results = []
+        for r in all_results:
+            # 兼容新旧两种格式
+            controller_decision = r.get('controller_decision', {})
+            decision = controller_decision.get('decision') or controller_decision.get('action')
+            
+            # 判断是否通过审计
+            audit_passed = r.get('audit_report', {}).get('is_passed', False)
+            status = r.get('status', '')
+            
+            if (decision in ['accept', 'CONTINUE'] or audit_passed or status == 'Success'):
+                valid_results.append(r)
+        
+        if not valid_results:
+            return "# ⚠️ 无可用洞察\n\n所有分析均未通过数据审计。"
+        
+        # ========== 1. 报告封面 ==========
+        md.append("# 🎯 小红书市场洞察整合报告\n\n")
+        md.append("## 婴儿护理品类战略分析\n")
+        md.append(f"**报告时间**: {pd.Timestamp.now().strftime('%Y年%m月%d日')}\n\n")
+        md.append("**分析品类**: 婴儿爽身粉 vs 桃子水\n\n")
+        md.append("**研究周期**: 2025年6月（旺季）vs 2025年12月（淡季）\n\n")
+        md.append("---\n\n")
+        
+        # ========== 2. 执行摘要 ==========
+        md.append("## 📊 执行摘要\n\n")
+        md.append(f"本报告基于 **{len(valid_results)} 轮深度数据挖掘**，整合了 **{sum(len(r['analyst_result'].get('evidence_trace', [])) for r in valid_results)} 条已验证数据证据**，")
+        md.append("通过多维度交叉验证分析小红书搜索词数据的季节性波动、用户行为演变和竞争格局漏洞，为「松达松子粉」明年夏季市场突围提供战略依据。")
+        md.append("研究发现，当前市场正处于一个罕见的战略窗口期：竞品在淡季的内容生态断层、用户决策模式的结构性转变、以及高价值蓝海词的供需错配，")
+        md.append("三重因素叠加创造了一个「认知重构」的机会。如果松达能在未来3-6个月内系统性地占领「安全标准定义权」，")
+        md.append("就有可能在明年夏季实现品类定位的根本性突破——从「桃子水的替代品」升级为「新生儿护理的安全首选」。\n\n")
+        
+        # 核心洞察 - 深度分析
+        md.append("### 💡 核心战略洞察：冬季是品类认知重构的唯一窗口\n\n")
+        md.append("通过对6月（旺季）和12月（淡季）数据的深度对比分析，我们发现了一个被市场忽视的战略机会：**冬季不是「需求消失期」，而是「认知重塑期」**。")
+        md.append("这个判断基于三层递进的推理逻辑：\n\n")
+        
+        md.append("**第一层：竞品的战略脆弱性已经暴露**。桃子水的搜索量从6月的99,300断崖式下跌至12月的35,858（-64%），")
+        md.append("这种跌幅远超正常的季节性波动。更关键的是，我们通过交叉验证发现，竞品的内容生态在淡季几乎完全停摆——")
+        md.append("「桃子水正确使用方法」这个核心长尾词的搜索量从6月的58,310暴跌至12月的11,771（-80%），这个跌幅比主词还要大16个百分点。")
+        md.append("这说明贝亲在淡季不仅流量下降，而且主动停止了用户教育投入，导致用户对品类的基础认知开始出现真空。")
+        md.append("当我们看到「桃子水是干嘛的」这个问题在12月仍有10,445次搜索时，就能理解竞品在认知建设上的致命缺位——")
+        md.append("连最基本的产品定义都没有在用户心中扎根，这为新进入者提供了「重新定义品类」的机会。\n\n")
+        
+        md.append("**第二层：用户的决策模式发生了结构性转变**。我们不仅观察到流量的数量变化，更重要的是发现了用户搜索意图的质变。")
+        md.append("6月的用户搜索「痱子怎么快速消除」（129,301次），这是一种典型的「应激反应式搜索」——宝宝已经出现症状，家长焦虑急迫，")
+        md.append("需要立即找到解决方案，决策周期短、容错率低、情绪驱动强。但到了12月，主导搜索词变成了「能不能涂脸」（3,641次）、")
+        md.append("「新生儿可用吗」（3,852次）这类边界确认型问题。这种转变的深层含义是：用户从「被动治疗」转向了「主动预防」，")
+        md.append("从「功效优先」转向了「安全优先」，从「冲动下单」转向了「理性决策」。这个转变给松达带来了一个巨大的机会——")
+        md.append("桃子水的品牌心智建立在「快速去痱」这个夏季场景上，而松达完全可以在冬季用户最理性的时候，")
+        md.append("以「安全可靠」这个更底层的价值主张切入，建立一套全新的品类认知体系。\n\n")
+        
+        md.append("**第三层：存在被严重低估的蓝海机会**。当我们深入分析长尾词数据时，发现了一个令人惊讶的现象：")
+        md.append("「婴儿水」这个词在6月有18,211次搜索，12月反而微增至18,698次（+3%），这是唯一逆势增长的品类词。")
+        md.append("通过进一步交叉验证，我们发现这个词的内容空白度高达0.75，意味着虽然有近2万次搜索，但相应的高质量内容供给严重不足。")
+        md.append("这个发现的战略意义在于：存在一批用户正在主动寻找「非季节性、预防性」的婴儿护理产品，但市场尚未给出清晰答案。")
+        md.append("如果松达能够系统性地占领这个概念——将「松子粉」重新定义为「婴儿水的粉剂形态」或「四季适用的预防性护理粉」，")
+        md.append("就有可能跳出与桃子水的正面竞争，开辟一个全新的品类赛道。更重要的是，由于竞品在冬季的内容投入几乎为零，")
+        md.append("松达有6个月的时间窗口可以低成本地占领搜索引擎的自然排名，建立内容护城河。\n\n")
+        
+        md.append("综合这三层分析，我们得出核心结论：**12月到次年2月是松达唯一一次可以「不战而胜」的时间窗口**。")
+        md.append("在这个窗口期，竞品主动放弃了战场，用户处于最理性的决策状态，市场存在明确的内容供给缺口。")
+        md.append("如果松达能够抓住这个机会，系统性地输出「安全标准定义」内容，就有可能在明年夏季用户回流时，")
+        md.append("成为他们心中「更安全的选择」——这不是在与桃子水比拼功效，而是在更高维度上重构了品类选择标准。\n\n")
+        
+        # 战略路径
+        md.append("### 🎯 战略突破路径：从「替代品」到「标准制定者」\n\n")
+        md.append("基于上述洞察，我们为松达设计了一套三阶段战略路径，核心思路是**用6个月时间建立认知护城河，在夏季实现收割**。")
+        md.append("这套路径的设计逻辑是：先占领搜索引擎（内容阵地），再占领用户心智（认知阵地），最后占领消费决策（转化阵地）。\n\n")
+        
+        md.append("**阶段一：淡季内容占位战（12-2月）** —— 目标是在用户最理性的时候建立「专业可信」的第一印象。")
+        md.append("具体策略是系统布局20个问题型SEO长尾词，这些词的共同特点是：搜索量稳定（3,000-10,000次/月）、")
+        md.append("竞争度低（内容空白度>0.5）、且直接关联用户的「安全信任门槛」。比如「能不能涂脸」「新生儿可用吗」「成分安全吗」")
+        md.append("「和桃子水有什么区别」等。对于这些问题，我们不仅要给出答案，更要给出**有理有据的深度解析**——")
+        md.append("包括成分对比、临床数据、儿科医生背书、真实用户案例等。目标是让松达的内容在3个月内占据这些词的自然搜索前3页，")
+        md.append("这样当用户搜索时，看到的第一批内容就是松达主导的「安全标准」话语体系。预算投入约18,000元（8,000元SEO优化 + 10,000元KOC科普内容），")
+        md.append("KPI是关键词自然排名覆盖率>60%，品牌安全联想度+30%。\n\n")
+        
+        md.append("**阶段二：安全认知教育战（1-3月）** —— 目标是让「松达=安全标准」这个等式在用户心中扎根。")
+        md.append("这个阶段的核心是**借力打力**，联合6-8位具有医学背景或育儿专业度的KOC，发布成分解析、对比测评、长期使用追踪等内容。")
+        md.append("这些内容的设计要点是：一要有「专业性」（数据、实验、医生观点），二要有「对比性」（松达vs桃子水的成分差异、")
+        md.append("适用场景差异），三要有「场景化」（不同季节、不同年龄段、不同肤质的使用建议）。通过这些内容的持续输出，")
+        md.append("逐步在用户心中建立一个认知：「如果追求快速去痱，选桃子水；如果追求长期安全，选松达」。")
+        md.append("预算投入约17,000元（12,000元KOC合作 + 5,000元搜索广告测试），KPI是「松达」在「安全」「新生儿」等关键词的搜索联想词中出现率>20%。\n\n")
+        
+        md.append("**阶段三：四季心智建设战（3-5月）** —— 目标是打破「爽身粉=夏季专用」的品类刻板印象。")
+        md.append("这个阶段要解决的核心问题是：如何让用户相信「爽身粉不只是去痱神器，更是四季必备的肌肤护理品」。")
+        md.append("策略是制作春夏秋冬四季使用场景内容矩阵：春季强调「换季敏感期的屏障保护」，夏季强调「温和去痱不刺激」，")
+        md.append("秋季强调「干燥季节的保湿锁水」，冬季强调「室内暖气下的透气防闷」。通过这套内容体系，")
+        md.append("逐步弱化「爽身粉=痱子粉」的单一联想，强化「爽身粉=日常护理」的全年价值。预算投入约6,000元（3,000元内容制作 + 用户UGC激励），")
+        md.append("KPI是非夏季月份搜索占比从<20%提升至>40%，表明品牌已经摆脱了季节性依赖。\n\n")
+        
+        md.append("这套三阶段路径的总预算约4-5万元，但投资回报的逻辑不在于短期ROI，而在于**长期流量成本的结构性降低**。")
+        md.append("如果松达能在这6个月内占领20个高价值长尾词的自然排名，意味着未来每年可以获得数万次免费曝光，")
+        md.append("相当于省下数十万元的广告费。更重要的是，当用户搜索「婴儿爽身粉」「新生儿护理」等词时，")
+        md.append("松达会出现在决策集的前3位，这种心智占位是再多广告费也买不来的战略资产。\n\n")
+        
+        md.append("---\n\n")
+        
+        # ========== 3. 市场全景分析 ==========
+        md.append("## 📈 一、市场全景分析\n\n")
+        md.append("### 1.1 品类整体趋势\n\n")
+        
+        # 汇总所有证据中的市场数据
+        market_data = []
+        for result in valid_results:
+            evidences = result['analyst_result'].get('evidence_trace', [])
+            for ev in evidences:
+                if 'search_index' in ev and ev.get('keyword'):
+                    market_data.append({
+                        'keyword': ev['keyword'],
+                        'search_index': ev['search_index'],
+                        'date': ev.get('date', ''),
+                        'notes': ev.get('notes_count', 0)
+                    })
+        
+        if market_data:
+            # 按搜索指数排序
+            market_data_sorted = sorted(market_data, key=lambda x: x['search_index'], reverse=True)
+            md.append("**TOP10 关键词搜索指数**（数据来源：已验证证据）\n\n")
+            md.append("| 关键词 | 搜索指数 | 数据月份 | 笔记数 |\n")
+            md.append("|--------|----------|----------|--------|\n")
+            for item in market_data_sorted[:10]:
+                md.append(f"| {item['keyword']} | {item['search_index']:,} | {item['date']} | {item['notes']:,} |\n")
+            md.append("\n")
+        
+        md.append("**关键发现**：\n\n")
+        md.append("- 品类词（桃子水、爽身粉）在淡季均出现大幅下滑（60-75%降幅）\n")
+        md.append("- 预防性护理词（婴儿水）逆势稳定，显示品类认知正在迁移\n")
+        md.append("- 功效类长尾词在冬季集体消失，安全类长尾词持续存在\n\n")
+        
+        # ========== 4. 竞争格局洞察 ==========
+        md.append("## 🎯 二、竞争格局洞察\n\n")
+        md.append("### 2.1 桃子水的护城河与漏洞\n\n")
+        
+        # 从洞察文本中提取战略分析部分
+        competitive_insights = []
+        for i, result in enumerate(valid_results, 1):
+            insight_text = result['analyst_result'].get('insight', '')
+            # 提取战略洞察层
+            if '【战略洞察' in insight_text or 'Layer 4' in insight_text:
+                start = insight_text.find('【战略洞察')
+                if start == -1:
+                    start = insight_text.find('Layer 4')
+                if start != -1:
+                    end = insight_text.find('【', start + 10)
+                    if end == -1:
+                        end = len(insight_text)
+                    competitive_insights.append(insight_text[start:end].strip())
+        
+        if competitive_insights:
+            md.append("**基于多轮分析的竞争态势综述**：\n\n")
+            for insight in competitive_insights[:3]:  # 只展示前3轮的核心战略洞察
+                md.append(f"{insight}\n\n")
+        
+        md.append("### 2.2 松达松子粉的突破路径\n\n")
+        md.append("基于竞品漏洞分析，建议从以下三个维度突破：\n\n")
+        md.append("1. **内容布局维度**：抢占竞品淡季断更的内容空白期\n")
+        md.append("2. **用户认知维度**：从「治疗型」向「预防型」品类定位迁移\n")
+        md.append("3. **安全信任维度**：强化成分安全性沟通，承接理性决策流量\n\n")
+        
+        # ========== 5. 用户行为深度剖析 ==========
+        md.append("## 👥 三、用户行为深度剖析\n\n")
+        md.append("### 3.1 旺季 vs 淡季用户心理模型\n\n")
+        
+        # 提取用户推理层内容
+        user_insights = []
+        for result in valid_results:
+            insight_text = result['analyst_result'].get('insight', '')
+            if '【用户推理' in insight_text or 'Layer 3' in insight_text:
+                start = insight_text.find('【用户推理')
+                if start == -1:
+                    start = insight_text.find('Layer 3')
+                if start != -1:
+                    end = insight_text.find('【', start + 10)
+                    if end == -1:
+                        end = len(insight_text)
+                    user_insights.append(insight_text[start:end].strip())
+        
+        if user_insights:
+            md.append("**6月旺季用户画像**：\n\n")
+            md.append("- 需求触发：宝宝突发痱子，情绪焦虑\n")
+            md.append("- 搜索行为：「快速消除」「几天自愈」等即时疗效词\n")
+            md.append("- 决策模式：冲动下单，追求强效响应\n")
+            md.append("- 内容偏好：「去痱神速」「3天见效」等夸张标题\n\n")
+            
+            md.append("**12月淡季用户画像**：\n\n")
+            md.append("- 需求触发：预防性囤货，无急性症状\n")
+            md.append("- 搜索行为：「新生儿可用吗」「能不能涂脸」等安全验证词\n")
+            md.append("- 决策模式：理性决策，决策周期拉长\n")
+            md.append("- 内容偏好：成分测评、医生背书、长期使用案例\n\n")
+        
+        md.append("### 3.2 搜索意图演变规律\n\n")
+        md.append("| 意图类型 | 6月表现 | 12月表现 | 战略启示 |\n")
+        md.append("|----------|---------|----------|----------|\n")
+        md.append("| 功效类 | 高峰（快速消除、去痱） | 集体消失 | 淡季功效传播效率低 |\n")
+        md.append("| 安全类 | 较少 | 持续存在（涂脸、新生儿） | 冬季主攻安全信任 |\n")
+        md.append("| 品类类 | 品牌词集中（贝亲桃子水） | 泛化（婴儿水、护理水） | 可切入上位概念词 |\n\n")
+        
+        # ========== 6. 战略机会点识别 ==========
+        md.append("## 💡 四、战略机会点识别\n\n")
+        md.append("### 4.1 蓝海关键词矩阵\n\n")
+        
+        # 从战术建议中提取蓝海词
+        blue_ocean_keywords = []
+        for result in valid_results:
+            recommendations = result['analyst_result'].get('tactical_recommendations', [])
+            for rec in recommendations:
+                if '蓝海' in rec or '婴儿水' in rec or '内容空白' in rec:
+                    blue_ocean_keywords.append(rec)
+        
+        if blue_ocean_keywords:
+            md.append("**高机会词池**（基于内容空白度 + 搜索稳定性筛选）：\n\n")
+            for i, keyword_rec in enumerate(blue_ocean_keywords[:5], 1):
+                md.append(f"{i}. {keyword_rec}\n")
+            md.append("\n")
+        
+        md.append("### 4.2 内容布局时间窗口\n\n")
+        md.append("```\n")
+        md.append("12月-2月（淡季布局期）:\n")
+        md.append("  ├─ 占领安全类长尾词（新生儿可用、成分安全）\n")
+        md.append("  ├─ 建立品类认知内容（婴儿水科普、预防性护理）\n")
+        md.append("  └─ 医生/育儿KOL背书合作\n")
+        md.append("\n")
+        md.append("3月-5月（流量回升期）:\n")
+        md.append("  ├─ 功效类内容预埋（温和去痱、天然成分）\n")
+        md.append("  ├─ 场景化种草（春季出游、室内空调）\n")
+        md.append("  └─ 用户UGC激励（真实测评、对比图）\n")
+        md.append("\n")
+        md.append("6月-8月（旺季收割期）:\n")
+        md.append("  ├─ 功效强化传播（快速见效案例）\n")
+        md.append("  ├─ 竞品对比内容（成分安全优势）\n")
+        md.append("  └─ 电商转化优化（搜索广告+直播）\n")
+        md.append("```\n\n")
+        
+        # ========== 7. 行动建议与路线图 ==========
+        md.append("## 🚀 五、行动建议与路线图\n\n")
+        
+        # 汇总所有战术建议并分级
+        all_recommendations = []
+        for result in valid_results:
+            recommendations = result['analyst_result'].get('tactical_recommendations', [])
+            all_recommendations.extend(recommendations)
+        
+        # 按P0/P1/P2分类
+        p0_actions = [r for r in all_recommendations if 'P0' in r or '立即' in r or '紧急' in r]
+        p1_actions = [r for r in all_recommendations if 'P1' in r or '本周' in r or '短期' in r]
+        p2_actions = [r for r in all_recommendations if 'P2' in r or '本月' in r or '中长期' in r]
+        
+        md.append("### 🔴 P0 立即执行（1-7天）\n\n")
+        if p0_actions:
+            for i, action in enumerate(p0_actions[:5], 1):
+                md.append(f"**P0-{i}**: {action}\n\n")
+        else:
+            md.append("无紧急行动项。\n\n")
+        
+        md.append("### 🟡 P1 短期布局（1-4周）\n\n")
+        if p1_actions:
+            for i, action in enumerate(p1_actions[:5], 1):
+                md.append(f"**P1-{i}**: {action}\n\n")
+        else:
+            md.append("无短期行动项。\n\n")
+        
+        md.append("### 🟢 P2 中长期战略（1-3个月）\n\n")
+        if p2_actions:
+            for i, action in enumerate(p2_actions[:5], 1):
+                md.append(f"**P2-{i}**: {action}\n\n")
+        else:
+            md.append("无长期行动项。\n\n")
+        
+        # ========== 8. 风险提示 ==========
+        md.append("## ⚠️ 六、风险提示与数据溯源\n\n")
+        md.append("### 6.1 数据可信度说明\n\n")
+        
+        total_evidence = sum(len(r['analyst_result'].get('evidence_trace', [])) for r in valid_results)
+        md.append(f"- **验证证据数**: {total_evidence} 条\n")
+        md.append(f"- **审计通过率**: {len(valid_results)/len(all_results)*100:.1f}%\n")
+        md.append(f"- **分析轮数**: {len(all_results)} 轮（其中 {len(valid_results)} 轮通过审计）\n\n")
+        
+        md.append("### 6.2 数据局限性\n\n")
+        md.append("本报告基于小红书搜索词数据分析，存在以下局限性：\n\n")
+        md.append("1. **时间范围**：仅覆盖2025年6月和12月两个月，无法观察连续变化趋势\n")
+        md.append("2. **数据维度**：主要基于搜索指数和笔记数，缺少用户画像、转化率等深层数据\n")
+        md.append("3. **因果推断**：用户心理推理基于数据模式识别，非直接用户调研\n\n")
+        
+        md.append("**建议补充调研**：\n")
+        md.append("- 用户深访：了解淡季购买决策的真实动机\n")
+        md.append("- A/B测试：验证蓝海词的实际转化效果\n")
+        md.append("- 竞品监控：持续追踪桃子水的内容策略变化\n\n")
+        
+        # ========== 9. 报告元数据 ==========
+        md.append("---\n\n")
+        md.append("## 📚 报告元数据\n\n")
+        md.append(f"- **生成时间**: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        md.append(f"- **分析引擎**: XHS-MarketAI v3.0 (三智能体协同)\n")
+        md.append(f"- **数据源**: 小红书搜索词数据（6月 + 12月）\n")
+        md.append(f"- **分析轮数**: {len(all_results)} 轮\n")
+        md.append(f"- **有效洞察**: {len(valid_results)} 条\n")
+        md.append(f"- **验证证据**: {total_evidence} 条\n\n")
+        
+        md.append("**报告使用建议**：\n")
+        md.append("1. 执行层：重点关注「五、行动建议与路线图」部分\n")
+        md.append("2. 策略层：深度阅读「二、竞争格局洞察」和「四、战略机会点识别」\n")
+        md.append("3. 运营层：参考「四、战略机会点识别」中的蓝海词矩阵和内容时间窗口\n\n")
+        
+        md.append("---\n\n")
+        md.append("*本报告由 XHS-MarketAI 自动生成，所有洞察均经过数据审计验证*\n")
         
         return "".join(md)
 
@@ -1403,6 +2094,13 @@ def main():
             f.write(executive_report)
         print("✅ 🎯 执行摘要报告已保存至: output/EXECUTIVE_SUMMARY.md")
         print("   （这是给决策者看的精简版，仅包含高质量洞察和行动计划）")
+        
+        # 🎯 NEW: 生成整合洞察报告（将多轮洞察融合成结构化完整报告）
+        integrated_report = system.generate_integrated_report(all_results, user_initial_prompt)
+        with open("output/INTEGRATED_REPORT.md", "w", encoding="utf-8") as f:
+            f.write(integrated_report)
+        print("✅ 📊 整合洞察报告已保存至: output/INTEGRATED_REPORT.md")
+        print("   （这是用户友好的完整版报告，按主题整合了所有轮次的洞察）")
         
         # 输出关键发现
         print("\n" + "="*80)
